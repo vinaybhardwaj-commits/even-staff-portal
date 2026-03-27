@@ -498,6 +498,71 @@
             height: 36px;
             width: auto;
         }
+
+        /* ============================================
+           "NEW" BADGE + PULSE DOT
+           ============================================ */
+        .new-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            margin-left: 8px;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--pink);
+            vertical-align: middle;
+        }
+        .new-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--pink);
+            animation: pulse-dot 2s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        /* Subtle highlight background for new items */
+        .is-new-item {
+            background: linear-gradient(90deg, var(--pink-light) 0%, transparent 60%);
+            border-radius: 8px;
+            margin: 0 -12px;
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+        }
+
+        /* ============================================
+           ENTRY TIMESTAMP
+           ============================================ */
+        .entry-timestamp {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: 400;
+            margin-top: 2px;
+        }
+
+        /* ============================================
+           TODAY BAR (below hero)
+           ============================================ */
+        .today-bar {
+            text-align: center;
+            padding: 10px 32px;
+            font-size: 13px;
+            color: var(--navy);
+            font-weight: 600;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            letter-spacing: 0.2px;
+        }
+        .today-bar .today-label {
+            color: var(--brand);
+            font-weight: 700;
+        }
     </style>
 </head>
 <body>
@@ -541,6 +606,11 @@
 <div class="hero">
     <h2>Staff Portal</h2>
     <p>Your hub for hospital updates, clinical resources, and system access</p>
+</div>
+
+<!-- Today Bar -->
+<div class="today-bar">
+    <span class="today-label">Today</span> &mdash; <span id="todayDate">Loading...</span>
 </div>
 
 <!-- Quick Access Bar -->
@@ -695,20 +765,54 @@ const SETTINGS_TAB = 'Settings';
 const REFRESH_INTERVAL = 5; // minutes
 
 // ===========================================================
-// CLOCK
+// CLOCK + TODAY BAR
 // ===========================================================
 function updateClock() {
     const now = new Date();
     document.getElementById('clockTime').textContent = now.toLocaleTimeString('en-IN', {
         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
     });
-    document.getElementById('clockDate').textContent = now.toLocaleDateString('en-IN', {
+    const dateStr = now.toLocaleDateString('en-IN', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
     });
+    document.getElementById('clockDate').textContent = dateStr;
+    document.getElementById('todayDate').textContent = dateStr;
     document.getElementById('footerYear').textContent = now.getFullYear();
 }
 updateClock();
 setInterval(updateClock, 1000);
+
+// ===========================================================
+// NEWNESS HELPERS
+// ===========================================================
+const NEW_THRESHOLD_HOURS = 48; // items added within 48h are "NEW"
+
+// Try to parse a date from Google Sheets (handles Date(...) format, ISO, or readable strings)
+function parseEntryDate(val) {
+    if (!val) return null;
+    // Google Sheets sometimes returns Date(year,month,day,...) format
+    const gMatch = String(val).match(/Date\((\d+),(\d+),(\d+)/);
+    if (gMatch) return new Date(+gMatch[1], +gMatch[2], +gMatch[3]);
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+}
+
+function isNew(dateVal) {
+    const d = parseEntryDate(dateVal);
+    if (!d) return false;
+    const hoursAgo = (Date.now() - d.getTime()) / (1000 * 60 * 60);
+    return hoursAgo >= 0 && hoursAgo <= NEW_THRESHOLD_HOURS;
+}
+
+function formatEntryDate(dateVal) {
+    const d = parseEntryDate(dateVal);
+    if (!d) return '';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function newBadgeHTML() {
+    return `<span class="new-indicator"><span class="new-dot"></span>NEW</span>`;
+}
 
 // ===========================================================
 // GOOGLE SHEETS FETCH
@@ -771,6 +875,24 @@ function renderAnnouncements(data) {
         const a = String(d.active || '').toLowerCase();
         return a === '' || a === 'true' || a === 'yes' || a === '1' || a === 'TRUE';
     });
+
+    // Sort newest first: items with dates sorted by date desc, then remaining in reverse row order
+    active.sort((a, b) => {
+        const da = parseEntryDate(a.date);
+        const db = parseEntryDate(b.date);
+        if (da && db) return db - da;
+        if (da) return -1;
+        if (db) return 1;
+        return 0; // preserve reverse order (we reverse below)
+    });
+    // Reverse so that items added last in the sheet come first (for undated items)
+    const undatedStart = active.findIndex(a => !parseEntryDate(a.date));
+    if (undatedStart >= 0) {
+        const dated = active.slice(0, undatedStart);
+        const undated = active.slice(undatedStart).reverse();
+        active.splice(0, active.length, ...dated, ...undated);
+    }
+
     document.getElementById('annCount').textContent = active.length;
     if (!active.length) {
         container.innerHTML = '<p style="color:#999;font-size:13px;padding:16px 0;">No announcements at this time. Check back soon.</p>';
@@ -779,11 +901,15 @@ function renderAnnouncements(data) {
     container.innerHTML = active.map(item => {
         const badgeMap = { 'urgent': 'ann-badge-urgent', 'update': 'ann-badge-update', 'info': 'ann-badge-info', 'education': 'ann-badge-education' };
         const bc = badgeMap[String(item.type || 'info').toLowerCase()] || 'ann-badge-info';
+        const itemIsNew = isNew(item.date);
+        const newClass = itemIsNew ? ' is-new-item' : '';
+        const dateDisplay = formatEntryDate(item.date) || String(item.date || '');
         return `
-            <div class="announcement-item">
+            <div class="announcement-item${newClass}">
                 <div class="ann-meta">
                     <span class="ann-badge ${bc}">${item.type || 'Info'}</span>
-                    <span class="ann-date">${item.date || ''}</span>
+                    <span class="ann-date">${dateDisplay}</span>
+                    ${itemIsNew ? newBadgeHTML() : ''}
                 </div>
                 <h3>${item.title || ''}</h3>
                 <p>${item.description || ''}</p>
@@ -796,25 +922,33 @@ function renderAnnouncements(data) {
 // ===========================================================
 function renderEducation(data) {
     const container = document.getElementById('education');
-    const active = data.filter(d => {
+    let active = data.filter(d => {
         const a = String(d.active || '').toLowerCase();
         return a === '' || a === 'true' || a === 'yes' || a === '1' || a === 'TRUE';
     });
+
+    // Reverse so newest additions (last rows in sheet) appear first
+    active = active.reverse();
+
     if (!active.length) {
         container.innerHTML = '<p style="color:#999;font-size:13px;padding:16px 0;">No educational resources listed yet.</p>';
         return;
     }
     const icons = { 'protocol': '&#x1F4CB;', 'training': '&#x1F393;', 'safety': '&#x1F6E1;&#xFE0F;', 'clinical': '&#x2695;&#xFE0F;', 'general': '&#x1F4D6;' };
     const colors = { 'protocol': 'bg-brand', 'training': 'bg-brand-bold', 'safety': 'bg-pink', 'clinical': 'bg-brand', 'general': 'bg-navy-light' };
-    container.innerHTML = active.map(item => {
+    container.innerHTML = active.map((item, idx) => {
         const cat = String(item.category || 'general').toLowerCase();
         const icon = icons[cat] || '&#x1F4D6;';
         const bg = colors[cat] || 'bg-navy-light';
+        // Mark the first item (newest) as NEW if it was recently added
+        // Since Education has no date field, we mark only the first item as new
+        // (the most recently added row) — this resets naturally as more rows are added
+        const itemIsNew = (idx === 0);
         return `
-            <a href="${item.link || '#'}" target="_blank" class="edu-item">
+            <a href="${item.link || '#'}" target="_blank" class="edu-item${itemIsNew ? ' is-new-item' : ''}">
                 <div class="edu-thumb ${bg}">${icon}</div>
                 <div>
-                    <div class="edu-cat">${item.category || 'General'}</div>
+                    <div class="edu-cat">${item.category || 'General'}${itemIsNew ? newBadgeHTML() : ''}</div>
                     <div class="edu-title">${item.title || ''}</div>
                     <div class="edu-desc">${item.description || ''}</div>
                 </div>
@@ -850,10 +984,12 @@ function toDirectImageURL(url) {
 
 function renderLinks(data) {
     if (!data.length) return;
+    // Reverse so newest additions (last rows in sheet) appear first
+    const reversed = [...data].reverse();
     const card = document.getElementById('extraLinksCard');
     const container = document.getElementById('extraLinks');
     card.style.display = 'block';
-    container.innerHTML = data.map(item => {
+    container.innerHTML = reversed.map((item, idx) => {
         const url = item.url || item.link || '#';
         const iconVal = (item.icon || '').trim();
         let iconHtml;
@@ -863,10 +999,11 @@ function renderLinks(data) {
         } else {
             iconHtml = iconVal || '&#x1F517;';
         }
-        return `<a href="${url}" target="_blank" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f0f2f5;text-decoration:none;color:var(--navy);font-size:13px;font-weight:600;">
-            <span style="flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:#f0f4ff;border-radius:8px;">${iconHtml}</span>
+        const itemIsNew = (idx === 0);
+        return `<a href="${url}" target="_blank" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #f0f2f5;text-decoration:none;color:var(--navy);font-size:13px;font-weight:600;${itemIsNew ? 'background:linear-gradient(90deg,var(--pink-light) 0%,transparent 60%);border-radius:8px;margin:0 -8px;padding-left:8px;padding-right:8px;' : ''}">
+            <span style="flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:var(--brand-light);border-radius:8px;">${iconHtml}</span>
             <span>
-                ${item.name || item.title || url}
+                ${item.name || item.title || url}${itemIsNew ? newBadgeHTML() : ''}
                 <span style="display:block;font-weight:400;color:var(--text-muted);font-size:12px;">${item.description || ''}</span>
             </span>
         </a>`;
