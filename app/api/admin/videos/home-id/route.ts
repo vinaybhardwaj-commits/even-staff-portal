@@ -10,10 +10,18 @@ export async function GET(req: NextRequest) {
   }
   const rows = (await sql`SELECT value FROM app_settings WHERE key = 'home_video_id'`) as { value: unknown }[];
   if (!rows[0]?.value) return NextResponse.json({ home_video_id: null });
-  const raw = rows[0].value as { id?: number } | string | number;
-  const id = typeof raw === 'object' && raw && 'id' in raw ? raw.id
-           : typeof raw === 'number' ? raw
-           : typeof raw === 'string' ? Number(raw)
-           : null;
-  return NextResponse.json({ home_video_id: Number.isFinite(id) ? id : null });
+  let raw: unknown = rows[0].value;
+  // app_settings.value is TEXT — JSON values come back as strings, parse them.
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try { raw = JSON.parse(trimmed); } catch { /* keep as string */ }
+    }
+  }
+  const id = typeof raw === 'object' && raw !== null && 'id' in raw
+    ? Number((raw as { id: unknown }).id)
+    : typeof raw === 'number' ? raw
+    : typeof raw === 'string' ? Number(raw)
+    : NaN;
+  return NextResponse.json({ home_video_id: Number.isFinite(id) && id > 0 ? id : null });
 }

@@ -86,11 +86,22 @@ export async function getHomeVideo(): Promise<Video | null> {
     SELECT value FROM app_settings WHERE key = 'home_video_id'
   `) as { value: { id?: number } | string | null }[];
   if (!setting.length || !setting[0]?.value) return null;
-  const raw = setting[0].value;
-  // value is JSONB — could be {id: 42} or just the number wrapped as string
-  const id = typeof raw === 'object' && raw && 'id' in raw ? raw.id
-           : typeof raw === 'string' ? Number(raw) : null;
-  if (!id || !Number.isFinite(id)) return null;
+  let raw: unknown = setting[0].value;
+  // CDMSS pre-created app_settings.value as TEXT (not JSONB), so JSONB writes
+  // round-trip through text storage. Reader handles all three shapes:
+  // (a) parsed object {id:42}, (b) JSON string '{"id":42}', (c) plain number/string "42".
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try { raw = JSON.parse(trimmed); } catch { /* keep as string */ }
+    }
+  }
+  const id = typeof raw === 'object' && raw !== null && 'id' in raw
+    ? Number((raw as { id: unknown }).id)
+    : typeof raw === 'string' ? Number(raw)
+    : typeof raw === 'number' ? raw
+    : NaN;
+  if (!Number.isFinite(id) || id <= 0) return null;
 
   const rows = await sql`
     SELECT id, title, description, source_type, blob_url, youtube_video_id, thumbnail_url
