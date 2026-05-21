@@ -1,0 +1,3 @@
+# Even Staff Portal — internal only, no public indexing
+User-agent: *
+Disallow: /
