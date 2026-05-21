@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, ExternalLink, X, Edit2, Save, FlaskConical } from 'lucide-react';
+import { Loader2, Plus, Trash2, ExternalLink, X, Edit2, Save, FlaskConical, History } from 'lucide-react';
+import { VersionHistoryDrawer } from '@/components/admin/VersionHistoryDrawer';
 
 type PilotApp = {
   id: number | string;
@@ -31,6 +32,7 @@ export function AdminPilotClient({ adminToken }: { adminToken: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | string | null>(null);
   const [draft, setDraft] = useState<Partial<PilotApp>>({});
+  const [historyFor, setHistoryFor] = useState<PilotApp | null>(null);
 
   const [name, setName] = useState('');
   const [openUrl, setOpenUrl] = useState('');
@@ -177,6 +179,9 @@ export function AdminPilotClient({ adminToken }: { adminToken: string }) {
                         <button onClick={() => { setEditing(p.id); setDraft({}); }} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-navy hover:border-brand hover:text-brand inline-flex items-center gap-1">
                           <Edit2 className="w-3 h-3" /> Edit
                         </button>
+                        <button onClick={() => setHistoryFor(p)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-navy hover:border-brand hover:text-brand inline-flex items-center gap-1">
+                          <History className="w-3 h-3" /> History
+                        </button>
                         <button onClick={() => softDelete(p.id, p.name)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-pink hover:text-pink-dark inline-flex items-center gap-1">
                           <Trash2 className="w-3 h-3" /> Hide
                         </button>
@@ -189,6 +194,12 @@ export function AdminPilotClient({ adminToken }: { adminToken: string }) {
           </ul>
         )}
       </div>
+
+      {historyFor && (
+        <VersionHistoryDrawer open onClose={() => setHistoryFor(null)}
+          entityType="pilot_app" entityId={Number(historyFor.id)} entityLabel={historyFor.name}
+          adminToken={adminToken} onRestored={refresh} />
+      )}
     </div>
   );
 }

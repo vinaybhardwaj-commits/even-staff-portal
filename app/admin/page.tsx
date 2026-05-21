@@ -1,17 +1,17 @@
 import Link from 'next/link';
-import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical, Bell } from 'lucide-react';
+import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical, Bell, FileText } from 'lucide-react';
 
 export const metadata = { title: 'Even Admin · Restricted' };
 
 const SECTIONS: { href: string; label: string; icon: typeof Tv; status: 'live' | 'sprint' }[] = [
-  { href: '/admin/sewa',      label: 'Sewa',          icon: Bell,          status: 'live' },
-  { href: '/admin/videos',    label: 'Videos',        icon: Tv,            status: 'live' },
-  { href: '/admin/resources', label: 'Resources',     icon: LinkIcon,      status: 'live' },
-  { href: '/admin/pilot',     label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
-  { href: '#',                label: 'Bulletin',      icon: MessageSquare, status: 'sprint' },
-  { href: '#',                label: 'Announcements', icon: Pin,           status: 'sprint' },
-  { href: '#',                label: 'Contacts',      icon: Phone,         status: 'sprint' },
-  { href: '#',                label: 'Settings',      icon: Settings,      status: 'sprint' },
+  { href: '/admin/sewa',          label: 'Sewa',          icon: Bell,          status: 'live' },
+  { href: '/admin/bulletin',      label: 'Bulletin',      icon: MessageSquare, status: 'live' },
+  { href: '/admin/announcements', label: 'Announcements', icon: Pin,           status: 'live' },
+  { href: '/admin/videos',        label: 'Videos',        icon: Tv,            status: 'live' },
+  { href: '/admin/resources',     label: 'Resources',     icon: LinkIcon,      status: 'live' },
+  { href: '/admin/pilot',         label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
+  { href: '/admin/contacts',      label: 'Contacts',      icon: Phone,         status: 'live' },
+  { href: '#',                    label: 'Settings',      icon: Settings,      status: 'sprint' },
 ];
 
 export default function AdminLanding() {
@@ -26,7 +26,7 @@ export default function AdminLanding() {
           </div>
         </div>
         <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-6">
-          You reached the hidden admin URL. Live admin surfaces below; remaining ship in SP.7.
+          7 of 8 admin surfaces live. Settings (home grid layout, density, refresh interval) ships in SP.7b.
         </p>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -46,7 +46,7 @@ export default function AdminLanding() {
                 <Icon className={`w-5 h-5 mb-2 ${live ? 'text-brand' : 'text-[var(--color-text-muted)]'}`} strokeWidth={1.75} />
                 <div className="text-[13px] font-medium text-navy">{s.label}</div>
                 <div className={`text-[10px] uppercase tracking-wide ${live ? 'text-brand' : 'text-[var(--color-text-muted)]'}`}>
-                  {live ? 'Live' : 'SP.7'}
+                  {live ? 'Live' : 'SP.7b'}
                 </div>
               </Container>
             );
@@ -55,6 +55,7 @@ export default function AdminLanding() {
 
         <div className="mt-8 text-xs text-[var(--color-text-muted)]">
           Middleware verified: <code className="bg-[var(--color-bg)] px-1.5 py-0.5 rounded">ADMIN_BASE_PATH</code> matched.
+          <span className="ml-3 inline-flex items-center gap-1"><FileText className="w-3 h-3" /> Version history available on Announcements / Resources / Pilot apps / Contacts via per-row History button.</span>
         </div>
       </div>
     </main>
