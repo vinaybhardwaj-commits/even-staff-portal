@@ -37,7 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   // CLINICAL TOOLS — external to CDMSS for SP.1 (alias-bridged at SP.8)
   { label: 'Ask',    href: 'https://even-cdmss.vercel.app/ask',          icon: MessageCircle, external: true, section: 'clinical' },
   { label: 'DDx',    href: 'https://even-cdmss.vercel.app/ddx',          icon: Sparkles,      external: true, section: 'clinical' },
-  { label: 'Drugs',  href: 'https://even-cdmss.vercel.app/drugs/lookup', icon: Pill,          external: true, section: 'clinical' },
+  { label: 'Drugs',  href: 'https://even-cdmss.vercel.app/drugs', icon: Pill,          external: true, section: 'clinical' },
   { label: 'Calc',   href: 'https://even-cdmss.vercel.app/calculators',  icon: Calculator,    external: true, section: 'clinical' },
   { label: 'Coach',  href: 'https://even-cdmss.vercel.app/coach',        icon: Brain,         external: true, section: 'clinical' },
   { label: 'Review', href: 'https://even-cdmss.vercel.app/review',       icon: BookOpen,      external: true, section: 'clinical' },
