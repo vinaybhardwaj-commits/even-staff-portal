@@ -4,13 +4,13 @@ import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical
 export const metadata = { title: 'Even Admin · Restricted' };
 
 const SECTIONS: { href: string; label: string; icon: typeof Tv; status: 'live' | 'sprint' }[] = [
+  { href: '/admin/sewa',      label: 'Sewa',          icon: Bell,          status: 'live' },
   { href: '/admin/videos',    label: 'Videos',        icon: Tv,            status: 'live' },
   { href: '/admin/resources', label: 'Resources',     icon: LinkIcon,      status: 'live' },
   { href: '/admin/pilot',     label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
   { href: '#',                label: 'Bulletin',      icon: MessageSquare, status: 'sprint' },
   { href: '#',                label: 'Announcements', icon: Pin,           status: 'sprint' },
   { href: '#',                label: 'Contacts',      icon: Phone,         status: 'sprint' },
-  { href: '#',                label: 'Sewa',          icon: Bell,          status: 'sprint' },
   { href: '#',                label: 'Settings',      icon: Settings,      status: 'sprint' },
 ];
 
