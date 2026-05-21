@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     try {
       // neon HTTP driver: sql.query for raw strings (not tagged-template).
       // No params so SQL-injection surface is the static V9 array itself.
-      await sql.query(stmt.sql);
+      await sql(stmt.sql);
       results.push({ name: `[${stmt.kind}] ${stmt.name}`, ok: true });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);

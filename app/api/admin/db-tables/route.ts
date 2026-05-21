@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
         counts[t] = 'invalid-name';
         continue;
       }
-      const result = await sql.query(`SELECT COUNT(*)::int AS n FROM "${t}"`);
+      const result = await sql(`SELECT COUNT(*)::int AS n FROM "${t}"`);
       counts[t] = (result as { n: number }[])[0]?.n ?? 0;
     } catch (e: unknown) {
       counts[t] = `err: ${e instanceof Error ? e.message : String(e)}`;
