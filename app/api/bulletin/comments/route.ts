@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   if (parentId !== null) {
     const parent = (await sql`SELECT post_id FROM bulletin_comments WHERE id = ${parentId}`) as { post_id: number }[];
-    if (parent.length === 0 || parent[0].post_id !== postId) {
+    if (parent.length === 0 || Number(parent[0].post_id) !== postId) {
       return NextResponse.json({ error: 'parent_mismatch' }, { status: 400 });
     }
   }
