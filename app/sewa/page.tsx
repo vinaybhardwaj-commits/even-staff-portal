@@ -25,8 +25,7 @@ export default async function SewaPage() {
             Routed to admin for triage. Anonymous by default.
           </p>
         </div>
-        {/* @ts-expect-error — SewaClient accepts the enriched type shape */}
-        <SewaClient initialTypes={enriched} />
+        <SewaClient initialTypes={enriched as unknown as Parameters<typeof SewaClient>[0]['initialTypes']} />
       </div>
     </AppLayout>
   );
