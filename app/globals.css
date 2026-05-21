@@ -47,3 +47,12 @@ html, body {
   .new-dot { animation: none; opacity: 1; }
   * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* NEW-row tint background (locked decision #26) — applied via .is-new / .is-new-row */
+.is-new, .is-new-row {
+  background: linear-gradient(90deg, rgba(253, 232, 242, 0.55) 0%, transparent 60%);
+  border-radius: 6px;
+  margin: 0 -6px;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
+}
