@@ -89,8 +89,8 @@ export function VideosLibraryClient({ initialVideos }: { initialVideos: Video[] 
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((v) => {
-            const thumb = v.thumbnail_url
-              || (v.youtube_video_id ? youtubeThumbnailUrl(v.youtube_video_id, 'hq') : null);
+            const ytThumb = v.youtube_video_id ? youtubeThumbnailUrl(v.youtube_video_id, 'hq') : null;
+            const isUpload = v.source_type === 'upload' && v.blob_url;
             return (
               <Link
                 key={v.id}
@@ -98,9 +98,12 @@ export function VideosLibraryClient({ initialVideos }: { initialVideos: Video[] 
                 className="group block bg-white rounded-xl border border-[var(--color-border)] overflow-hidden hover:border-brand/40 hover:shadow-card hover:-translate-y-0.5 transition-all duration-150"
               >
                 <div className="aspect-video bg-[var(--color-bg)] relative">
-                  {thumb ? (
+                  {isUpload ? (
+                    // v1.3: render the video itself; browser shows first frame as poster
+                    <video src={v.blob_url!} poster={v.thumbnail_url ?? undefined} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                  ) : ytThumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={thumb} alt="" className="w-full h-full object-cover" />
+                    <img src={ytThumb} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
                       <Tv className="w-10 h-10 text-[var(--color-text-muted)] opacity-30" strokeWidth={1.5} />
