@@ -28,6 +28,8 @@ export async function POST(req: NextRequest) {
     custom_fields?: Record<string, unknown>;
     attachment_url?: string | null;
     tags?: string[];
+    patient_name?: string;
+    patient_mrn?: string;
   };
   try { payload = await req.json(); } catch { return NextResponse.json({ error: 'invalid_json' }, { status: 400 }); }
 
