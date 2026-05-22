@@ -15,7 +15,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const id = Number(idStr);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
 
-  let payload: { title?: string; description?: string; category?: string; expires_at?: string | null; thumbnail_url?: string | null };
+  let payload: { title?: string; description?: string; category?: string; expires_at?: string | null; thumbnail_url?: string | null; sort_order?: number };
   try { payload = await req.json(); } catch { return NextResponse.json({ error: 'invalid_json' }, { status: 400 }); }
 
   // Build dynamic update from allowed fields

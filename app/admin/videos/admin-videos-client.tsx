@@ -14,6 +14,7 @@ type Video = {
   youtube_video_id: string | null;
   thumbnail_url: string | null;
   uploaded_at: string;
+  sort_order?: number;
   soft_deleted_at: string | null;
 };
 
@@ -25,6 +26,7 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
   const [error, setError] = useState<string | null>(null);
 
   // Upload form
+  const [dragId, setDragId] = useState<string | number | null>(null);
   const [upTitle, setUpTitle] = useState('');
   const [upDescription, setUpDescription] = useState('');
   const [upCategory, setUpCategory] = useState('');
@@ -158,23 +160,9 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
       const cj = await cr.json();
       if (!cr.ok) throw new Error(cj.error || 'create failed');
 
-      // Thumbnail extraction (fire-and-forget — UI doesn't block on it)
-      try {
-        const thumbFile = await extractThumbnailJpeg(upFile);
-        if (thumbFile) {
-          const tfd = new FormData();
-          tfd.append('file', thumbFile);
-          const tr = await fetch('/api/bulletin/upload', { method: 'POST', body: tfd });
-          const tj = await tr.json();
-          if (tr.ok && tj.url) {
-            await fetch(`/api/admin/videos/${cj.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json', authorization: authHeader },
-              body: JSON.stringify({ thumbnail_url: tj.url }),
-            });
-          }
-        }
-      } catch (e) { console.warn('[thumbnail] flow failed', e); /* best-effort */ }
+      // v1.3 P2: no canvas extraction. Admin list renders <video> directly
+      // so the browser's native first-frame poster is the thumbnail. Works
+      // for every codec the browser can decode for playback.
 
       setUpTitle(''); setUpDescription(''); setUpCategory(''); setUpFile(null);
       await refresh();
@@ -228,6 +216,29 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
       if (!r.ok) throw new Error((await r.json()).error || 'clear-home failed');
       await refresh();
     } catch (e) { setError((e as Error).message); }
+  }
+
+  async function reorderRow(fromId: string | number, toId: string | number) {
+    const list = [...videos.filter((v) => !v.soft_deleted_at)];
+    const fromIdx = list.findIndex((x) => x.id === fromId);
+    const toIdx = list.findIndex((x) => x.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, moved);
+    // Renumber 1, 2, 3, ...
+    setError(null);
+    try {
+      await Promise.all(list.map((v, i) =>
+        fetch(`/api/admin/videos/${v.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', authorization: authHeader },
+          body: JSON.stringify({ sort_order: i + 1 }),
+        }),
+      ));
+      await refresh();
+    } catch (e) {
+      setError('Reorder failed: ' + (e as Error).message);
+    }
   }
 
   async function softDelete(id: number | string, title: string) {
@@ -341,13 +352,27 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
             {videos.map((v) => {
               const isHome = Number(v.id) === homeId;
               const isDeleted = !!v.soft_deleted_at;
-              const thumb = v.thumbnail_url || (v.youtube_video_id ? youtubeThumbnailUrl(v.youtube_video_id, 'mq') : null);
+              const ytThumb = v.youtube_video_id ? youtubeThumbnailUrl(v.youtube_video_id, 'mq') : null;
+              const draggable = !isDeleted;
               return (
-                <li key={v.id} className={`flex items-center gap-3 px-4 py-3 ${isDeleted ? 'opacity-50' : ''}`}>
+                <li
+                  key={v.id}
+                  draggable={draggable}
+                  onDragStart={() => setDragId(v.id)}
+                  onDragOver={(e) => { if (draggable) e.preventDefault(); }}
+                  onDrop={(e) => { e.preventDefault(); if (dragId && dragId !== v.id) reorderRow(dragId, v.id); setDragId(null); }}
+                  className={`flex items-center gap-3 px-4 py-3 ${isDeleted ? 'opacity-50' : 'cursor-grab'} ${dragId === v.id ? 'opacity-30' : ''}`}
+                >
+                  <div className="text-[10px] text-[var(--color-text-muted)] tabular-nums w-6 text-right shrink-0">
+                    {v.sort_order ?? '–'}
+                  </div>
                   <div className="w-16 h-10 bg-[var(--color-bg)] rounded shrink-0 overflow-hidden">
-                    {thumb ? (
+                    {v.source_type === 'upload' && v.blob_url ? (
+                      // P2 fix: render the video itself; browser auto-shows first frame as poster
+                      <video src={v.blob_url} poster={v.thumbnail_url ?? undefined} muted playsInline preload="metadata" className="w-full h-full object-cover" />
+                    ) : ytThumb ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb} alt="" className="w-full h-full object-cover" />
+                      <img src={ytThumb} alt="" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Upload className="w-3 h-3 text-[var(--color-text-muted)]" />
