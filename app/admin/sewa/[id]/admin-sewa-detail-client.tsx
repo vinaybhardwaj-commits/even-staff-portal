@@ -41,7 +41,7 @@ type EventRow = {
 
 type Resolution = { id: number | string; slug: string; label: string; icon: string | null; requires_note: boolean };
 
-const SUGGESTED_TAGS = ['patient-impact', 'sla-breach', 'escalate-mgr', 'repeat', 'confidential'];
+// SUGGESTED_TAGS now fetched at runtime from /api/admin/sewa/suggested-tags
 
 export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken: string; complaintId: number }) {
   const auth = `Bearer ${adminToken}`;
@@ -61,6 +61,7 @@ export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken:
   const [resolveNotes, setResolveNotes] = useState('');
   const [resolving, setResolving] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [suggestedTags, setSuggestedTags] = useState<string[]>(['patient-impact', 'sla-breach', 'escalate-mgr', 'repeat', 'confidential']);
 
   async function refresh() {
     setLoading(true);
@@ -81,6 +82,9 @@ export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken:
     finally { setLoading(false); }
   }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [complaintId]);
+  useEffect(() => {
+    fetch('/api/admin/sewa/suggested-tags', { cache: 'no-store' }).then((r) => r.json()).then((j) => { if (Array.isArray(j.tags)) setSuggestedTags(j.tags); }).catch(() => {});
+  }, []);
 
   async function action(body: Record<string, unknown>) {
     const r = await fetch(`/api/admin/sewa/complaints/${complaintId}/action`, {
@@ -240,7 +244,7 @@ export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken:
             <input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder="Add tag" maxLength={60} className="flex-1 px-2 py-1 text-[11px] border border-[var(--color-border)] rounded" />
             <button onClick={() => addTag(tagInput)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] hover:border-brand">Add</button>
             <div className="flex items-center gap-1 flex-wrap">
-              {SUGGESTED_TAGS.filter((t) => !c.tags.includes(t)).map((t) => (
+              {suggestedTags.filter((t) => !c.tags.includes(t)).map((t) => (
                 <button key={t} onClick={() => addTag(t)} className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-bg)] text-[var(--color-text-muted)] hover:bg-brand-faint hover:text-brand">+{t}</button>
               ))}
             </div>

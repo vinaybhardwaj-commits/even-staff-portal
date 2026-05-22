@@ -23,6 +23,7 @@ export function AdminResourcesClient({ adminToken }: { adminToken: string }) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<number | string | null>(null);
   const [draft, setDraft] = useState<Partial<Resource>>({});
+  const [dragId, setDragId] = useState<number | string | null>(null);
   const [historyFor, setHistoryFor] = useState<Resource | null>(null);
 
   // Add form
@@ -31,6 +32,23 @@ export function AdminResourcesClient({ adminToken }: { adminToken: string }) {
   const [icon, setIcon] = useState(''); const [pinned, setPinned] = useState(false);
   const [adding, setAdding] = useState(false);
 
+  
+  async function reorderRow(fromId: number | string, toId: number | string) {
+    if (fromId === toId) return;
+    const arr = [...items];
+    const fromIdx = arr.findIndex((x) => x.id === fromId);
+    const toIdx = arr.findIndex((x) => x.id === toId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    // Assign new sort_order: increment by 10 from 10
+    await Promise.all(arr.map((row, i) => fetch(`/api/admin/resources/${row.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', authorization: auth },
+      body: JSON.stringify({ sort_order: (i + 1) * 10 }),
+    })));
+    await refresh();
+  }
   async function refresh() {
     setLoading(true);
     try {
@@ -114,7 +132,7 @@ export function AdminResourcesClient({ adminToken }: { adminToken: string }) {
 
       <div className="bg-white rounded-xl border border-[var(--color-border)] overflow-hidden">
         <div className="px-4 py-3 border-b border-[var(--color-border)]">
-          <h2 className="text-[13px] font-semibold text-navy">All resources ({items.length})</h2>
+          <h2 className="text-[13px] font-semibold text-navy flex-1">All resources ({items.length})</h2><span className="text-[10px] text-[var(--color-text-muted)]">⇅ drag rows to reorder</span>
         </div>
         {loading ? (
           <div className="p-8 text-center text-[12px] text-[var(--color-text-muted)]"><Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" /> Loading…</div>
@@ -125,7 +143,7 @@ export function AdminResourcesClient({ adminToken }: { adminToken: string }) {
             {items.map((r) => {
               const isEditing = editing === r.id;
               return (
-                <li key={r.id} className={`px-4 py-3 ${r.active ? '' : 'opacity-50'}`}>
+                <li key={r.id} draggable onDragStart={() => setDragId(r.id)} onDragOver={(e) => e.preventDefault()} onDrop={() => { if (dragId) reorderRow(dragId, r.id); setDragId(null); }} className={`px-4 py-3 ${r.active ? '' : 'opacity-50'} ${dragId === r.id ? 'opacity-30' : ''} cursor-move`}>
                   {isEditing ? (
                     <div className="space-y-2">
                       <div className="grid md:grid-cols-2 gap-2">

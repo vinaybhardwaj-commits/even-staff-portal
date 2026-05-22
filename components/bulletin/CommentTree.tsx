@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { EyeOff, Reply, ChevronDown } from 'lucide-react';
 import type { BulletinComment } from '@/lib/portal/bulletin';
 import { Avatar } from './Avatar';
+import { renderMarkdown } from '@/lib/portal/markdown';
 import { TimeChip } from './TimeChip';
 import { ReplyForm } from './ReplyForm';
 
@@ -47,7 +48,7 @@ function CommentRow({ node, depth, postId }: { node: CommentNode; depth: number;
                 <span className="text-[11px] font-semibold text-navy">{node.author_display_name}</span>
                 <TimeChip iso={node.created_at} />
               </div>
-              <div className="text-[12px] text-[var(--color-text-secondary)] leading-snug whitespace-pre-wrap">{node.body}</div>
+              <div className="text-[12px] text-[var(--color-text-secondary)] leading-snug markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(node.body) }} />
               <button
                 type="button"
                 onClick={() => setShowReply((v) => !v)}

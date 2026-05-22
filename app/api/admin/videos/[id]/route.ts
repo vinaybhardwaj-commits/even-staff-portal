@@ -15,7 +15,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const id = Number(idStr);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
 
-  let payload: { title?: string; description?: string; category?: string; expires_at?: string | null };
+  let payload: { title?: string; description?: string; category?: string; expires_at?: string | null; thumbnail_url?: string | null };
   try { payload = await req.json(); } catch { return NextResponse.json({ error: 'invalid_json' }, { status: 400 }); }
 
   // Build dynamic update from allowed fields
@@ -34,6 +34,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (typeof payload.description === 'string') await sql`UPDATE videos SET description = ${payload.description.trim() || null} WHERE id = ${id}`;
   if (typeof payload.category === 'string') await sql`UPDATE videos SET category = ${payload.category.trim() || null} WHERE id = ${id}`;
   if ('expires_at' in payload) await sql`UPDATE videos SET expires_at = ${payload.expires_at || null} WHERE id = ${id}`;
+  if ('thumbnail_url' in payload) await sql`UPDATE videos SET thumbnail_url = ${payload.thumbnail_url || null} WHERE id = ${id}`;
 
   await logAdminAction('edit', 'video', id, {});
   return NextResponse.json({ ok: true });

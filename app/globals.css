@@ -59,3 +59,6 @@ html, body {
 
 /* NEW pulse killswitch — Settings · Layout (PRD §11.8) */
 .kill-new-pulse .new-dot { animation: none !important; opacity: 1 !important; }
+
+/* Safe-area inset for mobile bottom bar (iOS notch + Android nav) */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }

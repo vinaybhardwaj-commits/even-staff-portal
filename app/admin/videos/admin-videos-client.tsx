@@ -37,6 +37,37 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
   const [ytUrl, setYtUrl] = useState('');
   const [addingYt, setAddingYt] = useState(false);
 
+
+  async function extractThumbnailJpeg(file: File): Promise<File | null> {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+      video.playsInline = true;
+      video.src = url;
+      video.onloadedmetadata = () => {
+        // Seek to ~1s or 10% of duration, whichever is earlier
+        video.currentTime = Math.min(1, (video.duration || 1) * 0.1);
+      };
+      video.onseeked = () => {
+        const w = video.videoWidth || 640;
+        const h = video.videoHeight || 360;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
+        ctx.drawImage(video, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (!blob) { resolve(null); return; }
+          resolve(new File([blob], 'thumb.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.82);
+      };
+      video.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    });
+  }
+
   async function refresh() {
     setLoading(true);
     try {
@@ -94,6 +125,24 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
       });
       const cj = await cr.json();
       if (!cr.ok) throw new Error(cj.error || 'create failed');
+
+      // Thumbnail extraction (fire-and-forget — UI doesn't block on it)
+      try {
+        const thumbFile = await extractThumbnailJpeg(upFile);
+        if (thumbFile) {
+          const tfd = new FormData();
+          tfd.append('file', thumbFile);
+          const tr = await fetch('/api/bulletin/upload', { method: 'POST', body: tfd });
+          const tj = await tr.json();
+          if (tr.ok && tj.url) {
+            await fetch(`/api/admin/videos/${cj.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', authorization: auth },
+              body: JSON.stringify({ thumbnail_url: tj.url }),
+            });
+          }
+        }
+      } catch { /* thumbnail is best-effort; failure shouldn't block the upload */ }
 
       setUpTitle(''); setUpDescription(''); setUpCategory(''); setUpFile(null);
       await refresh();

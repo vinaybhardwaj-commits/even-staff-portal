@@ -38,7 +38,7 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
   const [adding, setAdding] = useState(false);
 
   // Field add
-  const [newField, setNewField] = useState<{ field_slug: string; field_label: string; field_type: string; required: boolean }>({ field_slug: '', field_label: '', field_type: 'text', required: false });
+  const [newField, setNewField] = useState<{ field_slug: string; field_label: string; field_type: string; required: boolean; options_csv: string }>({ field_slug: '', field_label: '', field_type: 'text', required: false, options_csv: '' });
   // Resolution add
   const [newRes, setNewRes] = useState<{ slug: string; label: string; icon: string; requires_note: boolean }>({ slug: '', label: '', icon: '', requires_note: false });
 
@@ -95,11 +95,14 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
   async function addField(typeId: number) {
     if (!newField.field_slug.trim() || !newField.field_label.trim()) return;
     try {
+      const fieldOptions = newField.field_type === 'select' && newField.options_csv.trim()
+        ? { options: newField.options_csv.split(',').map((s) => s.trim()).filter(Boolean) }
+        : undefined;
       await fetch(`/api/admin/sewa/complaint-types/${typeId}/fields`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', authorization: auth },
-        body: JSON.stringify(newField),
+        body: JSON.stringify({ ...newField, field_options: fieldOptions }),
       });
-      setNewField({ field_slug: '', field_label: '', field_type: 'text', required: false });
+      setNewField({ field_slug: '', field_label: '', field_type: 'text', required: false, options_csv: '' });
       setFieldsByType((p) => ({ ...p, [typeId]: [] })); // bust cache
       await loadDetails(typeId);
     } catch (e) { setError((e as Error).message); }
@@ -208,6 +211,9 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
                         <select value={newField.field_type} onChange={(e) => setNewField({ ...newField, field_type: e.target.value })} className="px-2 py-1 text-[11px] border border-[var(--color-border)] rounded">
                           <option value="text">text</option><option value="textarea">textarea</option><option value="select">select</option><option value="number">number</option><option value="date">date</option>
                         </select>
+                        {newField.field_type === 'select' && (
+                          <input value={newField.options_csv} onChange={(e) => setNewField({ ...newField, options_csv: e.target.value })} placeholder="opt1, opt2, opt3" className="px-2 py-1 text-[11px] border border-[var(--color-border)] rounded flex-1" />
+                        )}
                         <label className="text-[10px] inline-flex items-center gap-1"><input type="checkbox" checked={newField.required} onChange={(e) => setNewField({ ...newField, required: e.target.checked })} className="rounded" />required</label>
                         <button onClick={() => addField(Number(t.id))} className="text-[10px] px-2 py-1 rounded bg-brand text-white">Add</button>
                       </div>

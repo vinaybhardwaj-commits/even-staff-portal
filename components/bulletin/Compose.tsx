@@ -130,7 +130,7 @@ export function Compose() {
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="What's the update?  (Markdown supported in v1.1 — plain text for now.)"
+        placeholder="What's the update?  Markdown supported: **bold**, *italic*, `code`, [links](https://...), # headings, > quotes, bullet & numbered lists."
         maxLength={8000}
         rows={5}
         className="w-full px-3 py-2 mb-3 text-[13px] text-navy bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg resize-none focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15"

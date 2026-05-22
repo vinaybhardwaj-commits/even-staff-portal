@@ -7,6 +7,7 @@ import { CommentTree } from '@/components/bulletin/CommentTree';
 import { ReplyForm } from '@/components/bulletin/ReplyForm';
 import Link from 'next/link';
 import { ArrowLeft, Pin, EyeOff, FileText, Image as ImageIcon, Paperclip } from 'lucide-react';
+import { renderMarkdown } from '@/lib/portal/markdown';
 import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,7 @@ export default async function BulletinThread({ params }: { params: Promise<{ id:
                 <TimeChip iso={post.created_at} />
               </div>
               <h1 className="text-[20px] font-semibold text-navy leading-tight mb-3">{post.title}</h1>
-              <div className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap mb-4">{post.body}</div>
+              <div className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed mb-4 markdown-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(post.body) }} />
 
               {post.attachment_url && (
                 <div className="mb-4 border border-[var(--color-border)] rounded-lg overflow-hidden">

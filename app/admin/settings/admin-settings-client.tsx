@@ -34,6 +34,8 @@ export function AdminSettingsClient({ adminToken }: { adminToken: string }) {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<CardId | null>(null);
+  const [tagsCsv, setTagsCsv] = useState('patient-impact, sla-breach, escalate-mgr, repeat, confidential');
+  const [tagsSaving, setTagsSaving] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -49,6 +51,14 @@ export function AdminSettingsClient({ adminToken }: { adminToken: string }) {
     finally { setLoading(false); }
   }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { fetch('/api/admin/sewa/suggested-tags', { cache: 'no-store' }).then((r) => r.json()).then((j) => { if (Array.isArray(j.tags)) setTagsCsv(j.tags.join(', ')); }).catch(() => {}); }, []);
+  async function saveTags() {
+    setTagsSaving(true);
+    try {
+      const tags = tagsCsv.split(',').map((s) => s.trim()).filter(Boolean);
+      await fetch('/api/admin/sewa/suggested-tags', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: auth }, body: JSON.stringify({ tags }) });
+    } finally { setTagsSaving(false); }
+  }
 
   async function save() {
     if (!settings) return;
@@ -202,6 +212,21 @@ export function AdminSettingsClient({ adminToken }: { adminToken: string }) {
             <span>Hide the ⌘K hint in the header</span>
             <span className="text-[10px] text-[var(--color-text-muted)]">— command palette not wired yet, hint can confuse</span>
           </label>
+        </div>
+      </section>
+
+
+      {/* SEWA SUGGESTED TAGS */}
+      <section className="bg-white rounded-xl border border-[var(--color-border)] p-4">
+        <h2 className="text-[13px] font-semibold text-navy mb-1">Sewa suggested tags</h2>
+        <p className="text-[11px] text-[var(--color-text-muted)] mb-3">Chip palette shown on admin complaint detail (per locked decision #32). Comma-separated.</p>
+        <div className="flex items-center gap-2">
+          <input value={tagsCsv} onChange={(e) => setTagsCsv(e.target.value)}
+            placeholder="patient-impact, sla-breach, escalate-mgr, repeat, confidential"
+            className="flex-1 px-3 py-2 text-[12px] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg focus:outline-none focus:border-brand" />
+          <button onClick={saveTags} disabled={tagsSaving} className="text-[11px] px-3 py-1.5 rounded bg-brand text-white hover:bg-brand-dark disabled:bg-[var(--color-text-muted)]">
+            {tagsSaving ? 'Saving…' : 'Save tags'}
+          </button>
         </div>
       </section>
 
