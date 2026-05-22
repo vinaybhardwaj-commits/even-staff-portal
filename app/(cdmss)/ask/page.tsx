@@ -1,7 +1,7 @@
 import HelpCard from '@/components/cdmss/HelpCard';
 import AskClient from './ask-client';
 
-export const metadata = { title: 'Ask · Even CDMSS' };
+export const metadata = { title: 'Ask · Even Staff Portal' };
 
 export default function AskPage() {
   return (

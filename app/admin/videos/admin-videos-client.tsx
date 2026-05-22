@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Loader2, Upload, Youtube, Trash2, Home, X, Check } from 'lucide-react';
+import { upload } from '@vercel/blob/client';
 import { youtubeThumbnailUrl } from '@/lib/portal/youtube';
 
 type Video = {
@@ -101,13 +102,23 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
   async function onUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!upTitle.trim() || !upFile) return;
+    if (upFile.size > 100 * 1024 * 1024) {
+      setError('File exceeds 100 MB');
+      return;
+    }
     setUploading(true); setError(null);
     try {
-      const fd = new FormData();
-      fd.append('file', upFile);
-      const ur = await fetch('/api/admin/videos/upload', { method: 'POST', body: fd, headers: { authorization: authHeader } });
-      const uj = await ur.json();
-      if (!ur.ok) throw new Error(uj.detail || uj.error || 'upload failed');
+      // v1.2 T2: presigned client→Blob upload (bypasses serverless body limit)
+      const today = new Date();
+      const yyyymm = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}`;
+      const safeBase = upFile.name.replace(/\.[a-z0-9]+$/i, '').replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 50) || 'video';
+      const ext = (upFile.name.match(/\.[a-z0-9]+$/i)?.[0] || '.mp4').toLowerCase();
+      const pathname = `video/${yyyymm}/${Date.now()}-${safeBase}${ext}`;
+      const blob = await upload(pathname, upFile, {
+        access: 'public',
+        handleUploadUrl: '/api/admin/videos/upload-token',
+        clientPayload: authHeader.replace(/^Bearer\s+/i, ''),  // raw ADMIN_TOKEN via opaque payload
+      });
 
       const cr = await fetch('/api/admin/videos', {
         method: 'POST',
@@ -117,10 +128,10 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
           description: upDescription.trim(),
           category: upCategory.trim(),
           source_type: 'upload',
-          blob_url: uj.url,
-          blob_path: uj.pathname,
-          size_bytes: uj.size,
-          mime_type: uj.contentType,
+          blob_url: blob.url,
+          blob_path: blob.pathname,
+          size_bytes: upFile.size,
+          mime_type: upFile.type,
         }),
       });
       const cj = await cr.json();
@@ -221,7 +232,7 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
         <form onSubmit={onUpload} className="bg-white rounded-xl border border-[var(--color-border)] p-4">
           <div className="flex items-center gap-2 mb-3">
             <Upload className="w-4 h-4 text-brand" />
-            <h2 className="text-[13px] font-semibold text-navy">Upload MP4 (≤ 25 MB)</h2>
+            <h2 className="text-[13px] font-semibold text-navy">Upload MP4 (≤ 100 MB)</h2>
           </div>
           <input
             type="text" value={upTitle} onChange={(e) => setUpTitle(e.target.value)}

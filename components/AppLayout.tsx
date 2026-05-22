@@ -1,4 +1,5 @@
 import { Sidebar } from './Sidebar';
+import { CommandPalette } from './CommandPalette';
 import { PortalHeader } from './PortalHeader';
 import { BottomBar } from './BottomBar';
 import type { HomeLayoutSettings } from '@/lib/portal/settings';
@@ -12,6 +13,7 @@ export function AppLayout({ children, title, settings }: { children: React.React
         <main className="flex-1 overflow-x-hidden pb-16 md:pb-0">{children}</main>
       </div>
       <BottomBar />
+      <CommandPalette disabled={!!settings?.kills.cmd_k} />
     </div>
   );
 }

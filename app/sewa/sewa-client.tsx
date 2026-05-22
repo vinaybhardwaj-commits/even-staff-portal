@@ -66,6 +66,8 @@ export function SewaClient({ initialTypes }: { initialTypes: CType[] }) {
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
   const [confidential, setConfidential] = useState(false);
+  const [patientName, setPatientName] = useState('');
+  const [patientMrn, setPatientMrn] = useState('');
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [displayName, setName] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -145,6 +147,8 @@ export function SewaClient({ initialTypes }: { initialTypes: CType[] }) {
           description: description.trim(),
           severity,
           confidential,
+          patient_name: patientName.trim() || undefined,
+          patient_mrn: patientMrn.trim() || undefined,
           raised_by_display_name: displayName || ANONYMOUS,
           custom_fields: customValues,
           attachment_url: attachment?.url ?? null,
@@ -290,6 +294,14 @@ export function SewaClient({ initialTypes }: { initialTypes: CType[] }) {
 
               {/* Confidential toggle */}
               <label className="flex items-center gap-2 text-[12px] text-navy cursor-pointer">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                <input type="text" value={patientName} onChange={(e) => setPatientName(e.target.value)}
+                  placeholder="Patient name (optional)" maxLength={120}
+                  className="px-3 py-2 text-[13px] bg-white border border-[var(--color-border)] rounded focus:outline-none focus:border-brand" />
+                <input type="text" value={patientMrn} onChange={(e) => setPatientMrn(e.target.value)}
+                  placeholder="MRN (optional)" maxLength={40}
+                  className="px-3 py-2 text-[13px] bg-white border border-[var(--color-border)] rounded focus:outline-none focus:border-brand" />
+              </div>
                 <input type="checkbox" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} className="rounded" />
                 <Lock className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
                 <span>Mark as confidential — only admin sees the details; others see title + status only.</span>

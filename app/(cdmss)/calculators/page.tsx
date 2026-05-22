@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Pill, Activity, Beaker, Droplet, Timer } from 'lucide-react';
 import HelpCard from '@/components/cdmss/HelpCard';
 
-export const metadata = { title: 'Calculators · Even CDMSS' };
+export const metadata = { title: 'Calculators · Even Staff Portal' };
 
 const CALCULATORS = [
   {

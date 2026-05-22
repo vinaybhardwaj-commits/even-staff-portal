@@ -116,6 +116,18 @@ export function AdminPilotClient({ adminToken }: { adminToken: string }) {
             className="px-3 py-2 text-[12px] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg focus:outline-none focus:border-brand">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
+          <div className="md:col-span-2 flex items-center gap-2">
+            <input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              const fd = new FormData(); fd.append('file', f);
+              const r = await fetch('/api/bulletin/upload', { method: 'POST', body: fd });
+              const j = await r.json();
+              if (r.ok && j.url) setScreenshotUrl(j.url);
+              else alert('upload failed: ' + (j.detail || j.error));
+            }} className="text-[12px]" />
+            <span className="text-[11px] text-[var(--color-text-muted)]">or paste URL →</span>
+          </div>
           <input type="text" value={screenshotUrl} onChange={(e) => setScreenshotUrl(e.target.value)} placeholder="Screenshot URL (optional)"
             className="px-3 py-2 text-[12px] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg focus:outline-none focus:border-brand" />
           <input type="text" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Owner name"
@@ -153,7 +165,20 @@ export function AdminPilotClient({ adminToken }: { adminToken: string }) {
                         <select value={draft.status ?? p.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as PilotApp['status'] })} className="px-2 py-1 text-[12px] border border-[var(--color-border)] rounded">
                           {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
-                        <input value={draft.screenshot_url ?? p.screenshot_url ?? ''} onChange={(e) => setDraft({ ...draft, screenshot_url: e.target.value })} placeholder="Screenshot URL" className="px-2 py-1 text-[12px] border border-[var(--color-border)] rounded" />
+                        <div className="flex items-center gap-1">
+                          <input value={draft.screenshot_url ?? p.screenshot_url ?? ''} onChange={(e) => setDraft({ ...draft, screenshot_url: e.target.value })} placeholder="Screenshot URL" className="px-2 py-1 text-[12px] border border-[var(--color-border)] rounded flex-1" />
+                          <label className="px-2 py-1 text-[10px] bg-[var(--color-bg)] border border-[var(--color-border)] rounded cursor-pointer hover:bg-brand-faint" title="Upload screenshot">
+                            ⬆
+                            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={async (e) => {
+                              const f = e.target.files?.[0]; if (!f) return;
+                              const fd = new FormData(); fd.append('file', f);
+                              const r = await fetch('/api/bulletin/upload', { method: 'POST', body: fd });
+                              const j = await r.json();
+                              if (r.ok && j.url) setDraft({ ...draft, screenshot_url: j.url });
+                              else alert('upload failed: ' + (j.detail || j.error));
+                            }} />
+                          </label>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => saveEdit(p.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-brand text-white text-[11px]"><Save className="w-3 h-3" /> Save</button>

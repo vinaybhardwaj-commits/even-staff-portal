@@ -4,5 +4,11 @@
   "regions": ["bom1"],
   "buildCommand": "next build",
   "installCommand": "npm install",
-  "git": { "deploymentEnabled": { "main": true } }
+  "git": { "deploymentEnabled": { "main": true } },
+  "crons": [
+    {
+      "path": "/api/cron/purge-soft-deleted",
+      "schedule": "30 21 * * *"
+    }
+  ]
 }

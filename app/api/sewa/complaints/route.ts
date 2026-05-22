@@ -68,15 +68,21 @@ export async function POST(req: NextRequest) {
   const attachmentUrl = payload.attachment_url || null;
   const tags = Array.isArray(payload.tags) ? payload.tags.filter((t) => typeof t === 'string' && t.length < 60).slice(0, 10) : [];
 
+  // v1.2 T8: optional patient_name + patient_mrn
+  const patientName = typeof payload.patient_name === 'string' ? payload.patient_name.trim().slice(0, 120) || null : null;
+  const patientMrn = typeof payload.patient_mrn === 'string' ? payload.patient_mrn.trim().slice(0, 40) || null : null;
+
   // Insert complaint (sets category to the type's slug for legacy column compat)
   const insertRows = await sql`
     INSERT INTO staff_complaints (
       title, description, category, severity, status, confidential,
-      raised_by_display_name, sla_due_at, complaint_type_id, custom_fields, tags, attachment_url
+      raised_by_display_name, sla_due_at, complaint_type_id, custom_fields, tags, attachment_url,
+      patient_name, patient_mrn
     ) VALUES (
       ${title}, ${description}, ${ctype.slug}, ${severity}, 'open', ${confidential},
       ${author.slice(0, 60)}, ${slaDueAt}, ${typeId}, ${JSON.stringify(custom)}::jsonb,
-      ${tags}::text[], ${attachmentUrl}
+      ${tags}::text[], ${attachmentUrl},
+      ${patientName}, ${patientMrn}
     )
     RETURNING id
   `;

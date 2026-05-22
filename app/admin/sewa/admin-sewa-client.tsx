@@ -14,6 +14,8 @@ type Complaint = {
   status: 'open' | 'ack' | 'in_progress' | 'resolved' | 'wont_fix';
   confidential: boolean;
   raised_by_display_name: string;
+  patient_name: string | null;
+  patient_mrn: string | null;
   assigned_to: string | null;
   sla_due_at: string;
   created_at: string;
@@ -137,7 +139,7 @@ export function AdminSewaClient({ adminToken }: { adminToken: string }) {
                     </div>
                     <div className="text-[13px] font-medium text-navy leading-snug">{c.title}</div>
                     <div className="text-[11px] text-[var(--color-text-secondary)] leading-snug truncate mt-0.5">
-                      by {c.raised_by_display_name} — {c.description}
+                      by {c.raised_by_display_name}{(c.patient_name || c.patient_mrn) ? <> · <span className="text-brand-dark">Patient: {c.patient_name || ''}{c.patient_mrn ? ` (${c.patient_mrn})` : ''}</span></> : null} — {c.description}
                     </div>
                     {c.tags.length > 0 && (
                       <div className="flex items-center gap-1 mt-1.5 flex-wrap">

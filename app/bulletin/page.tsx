@@ -1,7 +1,7 @@
 import { AppLayout } from '@/components/AppLayout';
 import { listPosts } from '@/lib/portal/bulletin';
 import { Compose } from '@/components/bulletin/Compose';
-import { PostCard } from '@/components/bulletin/PostCard';
+import { BulletinFilterBar } from '@/components/bulletin/BulletinFilterBar';
 import { Megaphone } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +24,7 @@ export default async function BulletinFeed() {
               <div className="text-[12px] text-[var(--color-text-secondary)]">Start the conversation. Use the box above to write the first post.</div>
             </div>
           ) : (
-            <div className="space-y-3">
-              {posts.map((p) => <PostCard key={p.id} post={p} />)}
-            </div>
+            <BulletinFilterBar posts={posts} />
           )}
         </div>
       </div>

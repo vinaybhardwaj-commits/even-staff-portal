@@ -1,7 +1,7 @@
 import HelpCard from '@/components/cdmss/HelpCard';
 import DdxClient from './ddx-client';
 
-export const metadata = { title: 'DDx · Even CDMSS' };
+export const metadata = { title: 'DDx · Even Staff Portal' };
 
 export default function DdxPage() {
   return (

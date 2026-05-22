@@ -49,6 +49,8 @@ export type StaffComplaint = {
   status: 'open' | 'ack' | 'in_progress' | 'resolved' | 'wont_fix';
   confidential: boolean;
   raised_by_display_name: string;
+  patient_name: string | null;
+  patient_mrn: string | null;
   assigned_to: string | null;
   resolution_notes: string | null;
   attachment_url: string | null;
@@ -139,7 +141,7 @@ export async function getResolutionsForType(typeId: number): Promise<ComplaintRe
 
 const COMPLAINT_COLS = `
   c.id, c.title, c.description, c.category, c.severity, c.status, c.confidential,
-  c.raised_by_display_name, c.assigned_to, c.resolution_notes, c.attachment_url,
+  c.raised_by_display_name, c.patient_name, c.patient_mrn, c.assigned_to, c.resolution_notes, c.attachment_url,
   c.sla_due_at::text, c.created_at::text, c.ack_at::text, c.resolved_at::text,
   c.complaint_type_id, c.custom_fields, c.resolution_id, c.resolution_is_other,
   COALESCE(c.tags, '{}'::text[]) AS tags,
@@ -152,7 +154,7 @@ export async function getComplaint(id: number): Promise<StaffComplaint | null> {
   const rows = await sql`
     SELECT
       c.id, c.title, c.description, c.category, c.severity, c.status, c.confidential,
-      c.raised_by_display_name, c.assigned_to, c.resolution_notes, c.attachment_url,
+      c.raised_by_display_name, c.patient_name, c.patient_mrn, c.assigned_to, c.resolution_notes, c.attachment_url,
       c.sla_due_at::text, c.created_at::text, c.ack_at::text, c.resolved_at::text,
       c.complaint_type_id, c.custom_fields, c.resolution_id, c.resolution_is_other,
       COALESCE(c.tags, '{}'::text[]) AS tags,
@@ -172,7 +174,7 @@ export async function listComplaintsByIds(ids: number[]): Promise<StaffComplaint
   const rows = await sql`
     SELECT
       c.id, c.title, c.description, c.category, c.severity, c.status, c.confidential,
-      c.raised_by_display_name, c.assigned_to, c.resolution_notes, c.attachment_url,
+      c.raised_by_display_name, c.patient_name, c.patient_mrn, c.assigned_to, c.resolution_notes, c.attachment_url,
       c.sla_due_at::text, c.created_at::text, c.ack_at::text, c.resolved_at::text,
       c.complaint_type_id, c.custom_fields, c.resolution_id, c.resolution_is_other,
       COALESCE(c.tags, '{}'::text[]) AS tags,
@@ -201,7 +203,7 @@ export async function listAdminComplaints(opts: {
   const rows = await sql`
     SELECT
       c.id, c.title, c.description, c.category, c.severity, c.status, c.confidential,
-      c.raised_by_display_name, c.assigned_to, c.resolution_notes, c.attachment_url,
+      c.raised_by_display_name, c.patient_name, c.patient_mrn, c.assigned_to, c.resolution_notes, c.attachment_url,
       c.sla_due_at::text, c.created_at::text, c.ack_at::text, c.resolved_at::text,
       c.complaint_type_id, c.custom_fields, c.resolution_id, c.resolution_is_other,
       COALESCE(c.tags, '{}'::text[]) AS tags,

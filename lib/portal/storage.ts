@@ -39,7 +39,7 @@ const KIND_DEFAULTS: Record<'bulletin' | 'video' | 'misc', Required<UploadConstr
     allowedContentTypes: /^(image\/(png|jpe?g|webp|gif|heic|heif)|application\/pdf)$/i,
   },
   video: {
-    maxBytes: 25 * 1024 * 1024, // 25 MB per V's SP.4-kickoff lock (simple multipart)
+    maxBytes: 100 * 1024 * 1024, // 100 MB per v1.2 T2 — presigned client upload
     allowedContentTypes: /^video\/(mp4|webm|quicktime|x-m4v|3gpp)$/i,
   },
   misc: {

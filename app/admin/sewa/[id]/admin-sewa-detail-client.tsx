@@ -14,6 +14,8 @@ type Complaint = {
   status: 'open' | 'ack' | 'in_progress' | 'resolved' | 'wont_fix';
   confidential: boolean;
   raised_by_display_name: string;
+  patient_name: string | null;
+  patient_mrn: string | null;
   assigned_to: string | null;
   sla_due_at: string;
   created_at: string;
@@ -196,6 +198,11 @@ export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken:
 
         <div className="text-[10px] text-[var(--color-text-muted)] pt-2 border-t border-[var(--color-border)]">
           Raised by <span className="text-navy font-medium">{c.raised_by_display_name}</span> · {absoluteTime(c.created_at)} · SLA due {relativeTime(c.sla_due_at)}
+          {(c.patient_name || c.patient_mrn) && (
+            <span className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded bg-brand-faint text-brand-dark text-[10px] font-medium">
+              Patient: {c.patient_name || '—'}{c.patient_mrn ? ` (MRN ${c.patient_mrn})` : ''}
+            </span>
+          )}
           {c.assigned_to && <> · assigned: <span className="text-navy font-medium">{c.assigned_to}</span></>}
           {isResolved && c.resolution_label && (
             <span className="block mt-1 text-emerald-700">

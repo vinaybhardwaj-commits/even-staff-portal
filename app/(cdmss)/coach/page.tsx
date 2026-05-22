@@ -1,7 +1,7 @@
 import HelpCard from '@/components/cdmss/HelpCard';
 import CoachClient from './coach-client';
 
-export const metadata = { title: 'Coach · Even CDMSS' };
+export const metadata = { title: 'Coach · Even Staff Portal' };
 
 export default function CoachPage() {
   return (
