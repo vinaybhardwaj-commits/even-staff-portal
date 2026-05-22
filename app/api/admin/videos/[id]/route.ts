@@ -48,10 +48,23 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
 
   await sql`UPDATE videos SET soft_deleted_at = NOW() WHERE id = ${id}`;
-  // If this video was the home video, clear it
-  await sql`
-    DELETE FROM app_settings
-    WHERE key = 'home_video_id' AND (value::text)::int = ${id}
-  `;
+  // If this video was the home video, clear it. value is TEXT storing JSON
+  // like {"id": 3} — parse in JS rather than try Postgres casts that break.
+  try {
+    const rows = (await sql`SELECT value FROM app_settings WHERE key = 'home_video_id'`) as { value: unknown }[];
+    if (rows.length) {
+      let raw: unknown = rows[0].value;
+      if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { /* keep */ } }
+      let homeId: number | null = null;
+      if (typeof raw === 'object' && raw !== null && 'id' in raw) homeId = Number((raw as { id: unknown }).id);
+      else if (typeof raw === 'number') homeId = raw;
+      else if (typeof raw === 'string') { const n = Number(raw); if (Number.isFinite(n)) homeId = n; }
+      if (homeId === id) {
+        await sql`DELETE FROM app_settings WHERE key = 'home_video_id'`;
+      }
+    }
+  } catch (e) {
+    console.warn('[admin/videos DELETE] home_video_id cleanup failed', e);
+  }
   return NextResponse.json({ ok: true });
 }

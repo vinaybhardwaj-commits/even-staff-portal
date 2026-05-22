@@ -246,7 +246,11 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
     setError(null);
     try {
       const r = await fetch(`/api/admin/videos/${id}`, { method: 'DELETE', headers: { authorization: authHeader } });
-      if (!r.ok) throw new Error((await r.json()).error || 'delete failed');
+      if (!r.ok) {
+        let msg = `delete failed (HTTP ${r.status})`;
+        try { msg = (await r.json()).error || msg; } catch { /* empty body, keep default */ }
+        throw new Error(msg);
+      }
       await refresh();
     } catch (e) { setError((e as Error).message); }
   }
