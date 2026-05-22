@@ -3,19 +3,23 @@ import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical
 
 export const metadata = { title: 'Even Admin · Restricted' };
 
-const SECTIONS: { href: string; label: string; icon: typeof Tv; status: 'live' | 'sprint' }[] = [
-  { href: '/admin/sewa',          label: 'Sewa',          icon: Bell,          status: 'live' },
-  { href: '/admin/bulletin',      label: 'Bulletin',      icon: MessageSquare, status: 'live' },
-  { href: '/admin/announcements', label: 'Announcements', icon: Pin,           status: 'live' },
-  { href: '/admin/videos',        label: 'Videos',        icon: Tv,            status: 'live' },
-  { href: '/admin/resources',     label: 'Resources',     icon: LinkIcon,      status: 'live' },
-  { href: '/admin/pilot',         label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
-  { href: '/admin/contacts',      label: 'Contacts',      icon: Phone,         status: 'live' },
-  { href: '/admin/settings',      label: 'Settings',      icon: Settings,      status: 'live' },
-  { href: '/admin/audit-log',     label: 'Audit log',     icon: Activity,      status: 'live' },
-];
+function buildSections(base: string): { href: string; label: string; icon: typeof Tv; status: 'live' | 'sprint' }[] {
+  return [
+    { href: `/${base}/sewa`,          label: 'Sewa',          icon: Bell,          status: 'live' },
+    { href: `/${base}/bulletin`,      label: 'Bulletin',      icon: MessageSquare, status: 'live' },
+    { href: `/${base}/announcements`, label: 'Announcements', icon: Pin,           status: 'live' },
+    { href: `/${base}/videos`,        label: 'Videos',        icon: Tv,            status: 'live' },
+    { href: `/${base}/resources`,     label: 'Resources',     icon: LinkIcon,      status: 'live' },
+    { href: `/${base}/pilot`,         label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
+    { href: `/${base}/contacts`,      label: 'Contacts',      icon: Phone,         status: 'live' },
+    { href: `/${base}/settings`,      label: 'Settings',      icon: Settings,      status: 'live' },
+    { href: `/${base}/audit-log`,     label: 'Audit log',     icon: Activity,      status: 'live' },
+  ];
+}
 
 export default function AdminLanding() {
+  const base = process.env.ADMIN_BASE_PATH || 'admin';
+  const SECTIONS = buildSections(base);
   return (
     <main className="min-h-screen bg-[var(--color-bg)] p-8">
       <div className="max-w-4xl mx-auto">
