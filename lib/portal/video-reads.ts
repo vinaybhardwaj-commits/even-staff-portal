@@ -51,16 +51,37 @@ export async function getVideo(id: number): Promise<Video | null> {
 }
 
 
-// v1.3 P3: ordered active-videos list for home carousel.
-// sort_order ASC then uploaded_at DESC. Soft-deleted excluded.
+// v1.3 P3 + hotfix: ordered active-videos list for home carousel.
+// home_video_id wins position 1 regardless of sort_order — sort_order then
+// orders the rest. This makes Set Home idempotent against sort_order drift.
 export async function getActiveVideosOrdered() {
+  // Read home_video_id (CDMSS-era TEXT col so we handle both JSON-object and string)
+  const setting = (await sql`SELECT value FROM app_settings WHERE key = 'home_video_id'`) as { value: unknown }[];
+  let homeId: number | null = null;
+  if (setting.length && setting[0]?.value != null) {
+    let raw: unknown = setting[0].value;
+    if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { /* keep as string */ } }
+    if (typeof raw === 'object' && raw !== null && 'id' in raw) {
+      const v = (raw as { id: unknown }).id;
+      homeId = typeof v === 'number' ? v : Number(v);
+    } else if (typeof raw === 'number') {
+      homeId = raw;
+    } else if (typeof raw === 'string') {
+      const n = Number(raw);
+      if (Number.isFinite(n)) homeId = n;
+    }
+    if (!Number.isFinite(homeId as number)) homeId = null;
+  }
   const rows = await sql`
     SELECT id, title, description, category, source_type, blob_url, blob_path,
            youtube_url, youtube_video_id, thumbnail_url, uploaded_at,
            COALESCE(sort_order, 100) AS sort_order
     FROM videos
     WHERE soft_deleted_at IS NULL
-    ORDER BY COALESCE(sort_order, 100) ASC, uploaded_at DESC
+    ORDER BY
+      CASE WHEN id = ${homeId} THEN 0 ELSE 1 END,
+      COALESCE(sort_order, 100) ASC,
+      uploaded_at DESC
     LIMIT 50
   `;
   return rows as Array<{
