@@ -6,9 +6,9 @@ import { LiteratureCard } from '@/components/home/LiteratureCard';
 import { ContactsCard } from '@/components/home/ContactsCard';
 import { ResourcesCard } from '@/components/home/ResourcesCard';
 import { Suspense } from 'react';
+import { getHomeLayout, densityPaddingClass, type CardId } from '@/lib/portal/settings';
+import { HomeAutoRefresh } from '@/components/home/HomeAutoRefresh';
 
-// Disable static caching — cards should render with fresh data on every load.
-// Per PRD §17.2: home cards may auto-refresh later via app_settings.refresh_interval.
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -28,21 +28,38 @@ function CardSkeleton() {
   );
 }
 
-export default function Home() {
+const CARD_RENDERERS: Record<CardId, () => React.ReactElement> = {
+  updates:   () => <UpdatesCard />,
+  video:     () => <VideoCard />,
+  sewa:      () => <SewaCard />,
+  lit:       () => <LiteratureCard />,
+  contacts:  () => <ContactsCard />,
+  resources: () => <ResourcesCard />,
+};
+
+export default async function Home() {
+  const layout = await getHomeLayout();
+  const cells = layout.cards.filter((c) => c.visible);
+  const padding = densityPaddingClass(layout.density);
+  const killNewPulseClass = layout.kills.new_pulse ? 'kill-new-pulse' : '';
+
   return (
-    <AppLayout>
-      <div className="px-6 py-4">
+    <AppLayout settings={layout}>
+      <div className={`${padding} ${killNewPulseClass}`}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-w-[1400px] mx-auto auto-rows-[260px]">
-          <Suspense fallback={<CardSkeleton />}><UpdatesCard /></Suspense>
-          <Suspense fallback={<CardSkeleton />}><VideoCard /></Suspense>
-          <Suspense fallback={<CardSkeleton />}><SewaCard /></Suspense>
-          <Suspense fallback={<CardSkeleton />}><LiteratureCard /></Suspense>
-          <Suspense fallback={<CardSkeleton />}><ContactsCard /></Suspense>
-          <Suspense fallback={<CardSkeleton />}><ResourcesCard /></Suspense>
+          {cells.map((c) => {
+            const Renderer = CARD_RENDERERS[c.id];
+            return (
+              <Suspense key={c.id} fallback={<CardSkeleton />}>
+                <Renderer />
+              </Suspense>
+            );
+          })}
         </div>
         <div className="mt-4 text-center text-[10px] text-[var(--color-text-muted)]">
-          portal v1 · SP.1.3 shipped · © Even Healthcare · Internal Use Only
+          portal v1.1 · © Even Healthcare · Internal Use Only
         </div>
+        {layout.refresh_interval_sec > 0 && <HomeAutoRefresh intervalSec={layout.refresh_interval_sec} />}
       </div>
     </AppLayout>
   );

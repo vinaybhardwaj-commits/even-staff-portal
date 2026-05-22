@@ -1,9 +1,14 @@
 import Link from 'next/link';
 import { Bell } from 'lucide-react';
 import { getSewaMonthlyStats } from '@/lib/portal/reads';
+import { getHomeLayout } from '@/lib/portal/settings';
 
 export async function SewaCard() {
-  const stats = await getSewaMonthlyStats();
+  const [stats, layout] = await Promise.all([
+    getSewaMonthlyStats(),
+    getHomeLayout(),
+  ]);
+  const showStats = !layout.kills.sewa_stats;
 
   return (
     <section className="h-full flex flex-col bg-white rounded-xl border border-[var(--color-border)] hover:shadow-card hover:-translate-y-0.5 transition-all duration-150 overflow-hidden">
@@ -31,9 +36,11 @@ export async function SewaCard() {
           View my past complaints →
         </Link>
 
-        <div className="mt-auto pt-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)] text-center">
-          This month · <span className="font-medium text-navy">{stats.raised}</span> raised · <span className="font-medium text-navy">{stats.resolved}</span> resolved
-        </div>
+        {showStats && (
+          <div className="mt-auto pt-3 border-t border-[var(--color-border)] text-[11px] text-[var(--color-text-muted)] text-center">
+            This month · <span className="font-medium text-navy">{stats.raised}</span> raised · <span className="font-medium text-navy">{stats.resolved}</span> resolved
+          </div>
+        )}
       </div>
     </section>
   );

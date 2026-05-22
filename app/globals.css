@@ -56,3 +56,6 @@ html, body {
   padding-left: 6px !important;
   padding-right: 6px !important;
 }
+
+/* NEW pulse killswitch — Settings · Layout (PRD §11.8) */
+.kill-new-pulse .new-dot { animation: none !important; opacity: 1 !important; }

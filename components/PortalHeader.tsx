@@ -13,7 +13,7 @@
 import { Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-export function PortalHeader({ title }: { title?: string }) {
+export function PortalHeader({ title, hideCmdK }: { title?: string; hideCmdK?: boolean }) {
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export function PortalHeader({ title }: { title?: string }) {
             className="w-full pl-9 pr-12 py-2 text-[13px] bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg text-navy placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/15 transition"
             aria-label="Global search (coming SP.7)"
           />
-          <kbd className="hidden lg:inline-flex absolute right-2.5 top-1/2 -translate-y-1/2 items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] bg-white border border-[var(--color-border)] rounded">
+          <kbd className={`${hideCmdK ? 'hidden' : 'hidden lg:inline-flex'} absolute right-2.5 top-1/2 -translate-y-1/2 items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-text-muted)] bg-white border border-[var(--color-border)] rounded`}>
             ⌘K
           </kbd>
         </label>
