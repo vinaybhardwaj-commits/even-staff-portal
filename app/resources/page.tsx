@@ -62,8 +62,13 @@ export default async function ResourcesPage() {
                           rel="noopener noreferrer"
                           className={`flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--color-bg)] transition-colors group ${isNewRow ? 'is-new-row' : ''}`}
                         >
-                          <div className="w-8 h-8 rounded-md bg-brand-faint text-brand flex items-center justify-center text-[14px] shrink-0">
-                            {r.icon || '🔗'}
+                          <div className="w-8 h-8 rounded-md bg-brand-faint text-brand flex items-center justify-center text-[14px] shrink-0 overflow-hidden">
+                            {r.icon && /^https?:\/\//.test(r.icon) ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={r.icon} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span>{r.icon || '🔗'}</span>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">

@@ -42,8 +42,13 @@ export async function ResourcesCard() {
                   rel="noopener noreferrer"
                   className={`flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-[var(--color-bg)] transition-colors group ${isNew ? 'is-new-row' : ''}`}
                 >
-                  <div className="w-7 h-7 rounded-md bg-brand-faint text-brand flex items-center justify-center text-[14px] shrink-0">
-                    {r.icon || '🔗'}
+                  <div className="w-7 h-7 rounded-md bg-brand-faint text-brand flex items-center justify-center text-[14px] shrink-0 overflow-hidden">
+                    {r.icon && /^https?:\/\//.test(r.icon) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={r.icon} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <span>{r.icon || '🔗'}</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
