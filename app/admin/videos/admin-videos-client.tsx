@@ -43,29 +43,50 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
     return new Promise((resolve) => {
       const url = URL.createObjectURL(file);
       const video = document.createElement('video');
-      video.preload = 'metadata';
+      video.preload = 'auto';  // 'metadata' is sometimes insufficient — need at least one decoded frame
       video.muted = true;
       video.playsInline = true;
+      video.crossOrigin = 'anonymous';
       video.src = url;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => { if (timeoutId) clearTimeout(timeoutId); URL.revokeObjectURL(url); };
+      // Hard timeout — give up after 15s for huge files / codec issues
+      timeoutId = setTimeout(() => {
+        console.warn('[thumbnail] timed out after 15s');
+        cleanup(); resolve(null);
+      }, 15000);
       video.onloadedmetadata = () => {
-        // Seek to ~1s or 10% of duration, whichever is earlier
-        video.currentTime = Math.min(1, (video.duration || 1) * 0.1);
+        const target = Math.min(1, (video.duration || 1) * 0.1);
+        try { video.currentTime = target; } catch (e) { console.warn('[thumbnail] seek failed', e); }
       };
       video.onseeked = () => {
-        const w = video.videoWidth || 640;
-        const h = video.videoHeight || 360;
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
-        ctx.drawImage(video, 0, 0, w, h);
-        canvas.toBlob((blob) => {
-          URL.revokeObjectURL(url);
-          if (!blob) { resolve(null); return; }
-          resolve(new File([blob], 'thumb.jpg', { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.82);
+        // Give the browser one animation frame to actually render the seeked frame
+        requestAnimationFrame(() => {
+          const w = video.videoWidth || 640;
+          const h = video.videoHeight || 360;
+          if (!video.videoWidth || !video.videoHeight) {
+            console.warn('[thumbnail] no video dimensions after seek');
+            cleanup(); resolve(null); return;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { console.warn('[thumbnail] no canvas context'); cleanup(); resolve(null); return; }
+          try {
+            ctx.drawImage(video, 0, 0, w, h);
+          } catch (e) {
+            console.warn('[thumbnail] drawImage failed', e);
+            cleanup(); resolve(null); return;
+          }
+          canvas.toBlob((blob) => {
+            cleanup();
+            if (!blob) { console.warn('[thumbnail] canvas.toBlob returned null'); resolve(null); return; }
+            console.log('[thumbnail] extracted', blob.size, 'bytes');
+            resolve(new File([blob], 'thumb.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.82);
+        });
       };
-      video.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      video.onerror = (e) => { console.warn('[thumbnail] video element error', e); cleanup(); resolve(null); };
     });
   }
 
@@ -153,7 +174,7 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
             });
           }
         }
-      } catch { /* thumbnail is best-effort; failure shouldn't block the upload */ }
+      } catch (e) { console.warn('[thumbnail] flow failed', e); /* best-effort */ }
 
       setUpTitle(''); setUpDescription(''); setUpCategory(''); setUpFile(null);
       await refresh();
@@ -352,7 +373,7 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
                       </button>
                     )}
                     {!isDeleted && (
-                      <button onClick={() => softDelete(v.id, v.title)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-pink hover:text-pink-dark inline-flex items-center gap-1">
+                      <button onClick={() => softDelete(v.id, v.title)} className="text-[10px] px-2 py-1 rounded border border-pink/40 bg-pink/5 text-pink-dark hover:bg-pink/15 hover:border-pink inline-flex items-center gap-1">
                         <Trash2 className="w-3 h-3" /> Delete
                       </button>
                     )}
