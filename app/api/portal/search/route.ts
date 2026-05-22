@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
         FROM bulletin_posts
         WHERE hidden_at IS NULL AND (title ILIKE ${q} OR body ILIKE ${q})
         ORDER BY last_activity_at DESC LIMIT ${limit}`,
-    sql`SELECT id::text AS id, label AS title, COALESCE(category, '') AS subtitle, url AS href
-        FROM resources WHERE active = TRUE AND (label ILIKE ${q} OR COALESCE(description,'') ILIKE ${q})
+    sql`SELECT id::text AS id, name AS title, COALESCE(category, '') AS subtitle, url AS href
+        FROM resources WHERE active = TRUE AND (name ILIKE ${q} OR COALESCE(description,'') ILIKE ${q})
         ORDER BY sort_order, label LIMIT ${limit}`,
     sql`SELECT id::text AS id, name AS title, COALESCE(role, department, '') AS subtitle
         FROM contacts WHERE active = TRUE AND (name ILIKE ${q} OR COALESCE(role,'') ILIKE ${q} OR COALESCE(department,'') ILIKE ${q})
