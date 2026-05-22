@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
 
   for (const s of statements) {
     try {
-      await sql.query(s);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (sql as any)(s);
       results.push({ stmt: s, ok: true });
     } catch (e: unknown) {
       results.push({ stmt: s, ok: false, error: e instanceof Error ? e.message : String(e) });
