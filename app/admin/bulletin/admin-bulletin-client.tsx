@@ -29,7 +29,7 @@ const CATEGORY_STYLE: Record<string, string> = {
   general: 'bg-navy/10 text-navy',
 };
 
-export function AdminBulletinClient({ adminToken }: { adminToken: string }) {
+export function AdminBulletinClient({ adminToken, basePath }: { adminToken: string; basePath: string }) {
   const auth = `Bearer ${adminToken}`;
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +111,7 @@ export function AdminBulletinClient({ adminToken }: { adminToken: string }) {
                     <div className="text-[10px] text-pink-dark mt-1 italic">Hidden reason: {p.hidden_reason}</div>
                   )}
                   <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                    <Link href={`/admin/bulletin/${p.id}`} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-navy hover:border-brand hover:text-brand inline-flex items-center gap-1">
+                    <Link href={`/${basePath}/bulletin/${p.id}`} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-navy hover:border-brand hover:text-brand inline-flex items-center gap-1">
                       <MessageCircle className="w-3 h-3" /> {p.comment_count} {p.hidden_comment_count > 0 && <span className="text-pink-dark">({p.hidden_comment_count} hidden)</span>} Open · moderate comments →
                     </Link>
                     <button onClick={() => togglePin(p.id, p.pinned)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] text-navy hover:border-brand hover:text-brand inline-flex items-center gap-1">
