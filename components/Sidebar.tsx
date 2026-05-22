@@ -1,11 +1,3 @@
-/**
- * Desktop sidebar — per PRD §4.1.
- *
- * Fixed 196px wide on ≥1024 (lg), 168px on 768-1023 (md), hidden on
- * <768 (mobile gets the bottom bar instead).
- *
- * Active route highlighted with brand-tint bg + brand-text. No admin link.
- */
 'use client';
 
 import Link from 'next/link';
@@ -13,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { ExternalLink } from 'lucide-react';
 import { NAV_ITEMS, SECTION_LABELS, type NavSection } from '@/lib/portal/nav';
 
-const SECTION_ORDER: NavSection[] = ['workspace', 'clinical', 'operations'];
+const SECTION_ORDER: NavSection[] = ['systems', 'workspace', 'clinical', 'operations'];
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -35,6 +27,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5">
         {SECTION_ORDER.map((section) => {
           const items = NAV_ITEMS.filter((i) => i.section === section);
+          if (items.length === 0) return null;
           return (
             <div key={section}>
               <div className="px-2 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-muted)]">
@@ -50,9 +43,11 @@ export function Sidebar() {
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)] hover:text-navy';
 
                   if (item.external) {
+                    // Hospital Systems items open in a new tab (external HIS apps).
+                    // Clinical Tools also use external:false now (middleware-redirected internal paths).
                     return (
                       <li key={item.label}>
-                        <a href={item.href} className={`${baseClass} ${stateClass}`} target="_self" rel="noopener">
+                        <a href={item.href} className={`${baseClass} ${stateClass}`} target="_blank" rel="noopener noreferrer">
                           <Icon className="w-4 h-4 shrink-0" strokeWidth={1.75} />
                           <span className="truncate flex-1">{item.label}</span>
                           <ExternalLink className="w-3 h-3 opacity-40 shrink-0 group-hover:opacity-70" strokeWidth={1.75} />
@@ -78,7 +73,7 @@ export function Sidebar() {
 
       {/* Footer slot */}
       <div className="px-4 py-3 border-t border-[var(--color-border)] text-[10px] text-[var(--color-text-muted)]">
-        Internal · v1
+        Internal · v1.1
       </div>
     </aside>
   );

@@ -1,24 +1,25 @@
 /**
- * Sidebar navigation config — per PRD §4.1.
+ * Sidebar navigation config — per PRD §4.1 + v1.1 expansion.
  *
- * 13 items in 3 sections, NO admin link (admin lives at hidden URL only,
- * per locked decision #17).
+ * 4 sections, NO admin link (admin lives at hidden URL only per locked
+ * decision #17).
  *
- * SP.8 (cutover): CDMSS clinical tools now use RELATIVE paths. The middleware
- * in middleware.ts redirects /ask, /ddx, /drugs, /coach, /calculators, /review
- * to the stable CDMSS underlying alias (even-cdmss-vinaybhardwaj-commits-projects
- * .vercel.app). The vanity aliases even-cdmss.vercel.app + even-tutor.vercel.app
- * now resolve to THIS staff-portal project, so a relative href is correct;
- * the redirect happens server-side from whichever host the user is on.
+ * v1.1 addition: HOSPITAL SYSTEMS section at the top with the three HIS
+ * apps (KareXpert, Pulse, Chart) — promoted out of /resources per V's
+ * 22 May 2026 ask. These open in a new tab (external HIS systems).
+ *
+ * SP.8 (cutover): CDMSS clinical tools use RELATIVE paths. Middleware
+ * redirects /ask, /ddx, /drugs, /coach, /calculators, /review to the stable
+ * CDMSS underlying alias.
  */
 import type { LucideIcon } from 'lucide-react';
 import {
   Home, Megaphone, Tv, Phone, Link as LinkIcon, FlaskConical,
   MessageCircle, Sparkles, Pill, Calculator, Brain, BookOpen,
-  Bell,
+  Bell, Building2, Activity, FileText,
 } from 'lucide-react';
 
-export type NavSection = 'workspace' | 'clinical' | 'operations';
+export type NavSection = 'systems' | 'workspace' | 'clinical' | 'operations';
 
 export type NavItem = {
   label: string;
@@ -29,6 +30,11 @@ export type NavItem = {
 };
 
 export const NAV_ITEMS: NavItem[] = [
+  // HOSPITAL SYSTEMS — external HIS apps, opens in new tab
+  { label: 'KareXpert', href: 'https://even.karexpert.com/account-management/login', icon: Building2, external: true, section: 'systems' },
+  { label: 'Pulse',     href: 'https://pulse.even.in/',                              icon: Activity,  external: true, section: 'systems' },
+  { label: 'Chart',     href: 'https://chart.even.in/',                              icon: FileText,  external: true, section: 'systems' },
+
   // WORKSPACE
   { label: 'Home',       href: '/',          icon: Home,          section: 'workspace' },
   { label: 'Bulletin',   href: '/bulletin',  icon: Megaphone,     section: 'workspace' },
@@ -50,6 +56,7 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export const SECTION_LABELS: Record<NavSection, string> = {
+  systems: 'HOSPITAL SYSTEMS',
   workspace: 'WORKSPACE',
   clinical: 'CLINICAL TOOLS',
   operations: 'OPERATIONS',
