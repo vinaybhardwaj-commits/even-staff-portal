@@ -11,7 +11,7 @@ export default async function AdminSewaDetailPage({ params }: { params: Promise<
   if (!Number.isFinite(n) || n <= 0) notFound();
   return (
     <AdminPageChrome title="Sewa complaint">
-      <AdminSewaDetailClient adminToken={process.env.ADMIN_TOKEN || ''} complaintId={n} />
+      <AdminSewaDetailClient adminToken={process.env.ADMIN_TOKEN || ''} complaintId={n} basePath={process.env.ADMIN_BASE_PATH || 'admin'} />
     </AdminPageChrome>
   );
 }

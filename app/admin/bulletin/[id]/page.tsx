@@ -11,7 +11,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   if (!Number.isFinite(n) || n <= 0) notFound();
   return (
     <AdminPageChrome title="Bulletin post">
-      <AdminBulletinDetailClient adminToken={process.env.ADMIN_TOKEN || ''} postId={n} />
+      <AdminBulletinDetailClient adminToken={process.env.ADMIN_TOKEN || ''} postId={n} basePath={process.env.ADMIN_BASE_PATH || 'admin'} />
     </AdminPageChrome>
   );
 }

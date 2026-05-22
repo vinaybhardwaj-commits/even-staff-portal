@@ -34,7 +34,7 @@ const STATUS_FILTER_OPTS: { label: string; values: string[] }[] = [
   { label: 'Resolved', values: ['resolved'] },
 ];
 
-export function AdminSewaClient({ adminToken }: { adminToken: string }) {
+export function AdminSewaClient({ adminToken, basePath }: { adminToken: string; basePath: string }) {
   const auth = `Bearer ${adminToken}`;
   const [items, setItems] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +125,7 @@ export function AdminSewaClient({ adminToken }: { adminToken: string }) {
               const isDeleted = !!c.soft_deleted_at;
               return (
                 <li key={c.id} className={isDeleted ? 'opacity-60' : ''}>
-                  <Link href={`/admin/sewa/${c.id}`} className="block px-4 py-3 hover:bg-[var(--color-bg)] transition-colors">
+                  <Link href={`/${basePath}/sewa/${c.id}`} className="block px-4 py-3 hover:bg-[var(--color-bg)] transition-colors">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <span className="text-[10px] text-[var(--color-text-muted)] font-mono">#{c.id}</span>
                       {c.complaint_type_icon && <span className="text-[12px]">{c.complaint_type_icon}</span>}

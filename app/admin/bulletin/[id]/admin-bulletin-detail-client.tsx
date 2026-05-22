@@ -30,7 +30,7 @@ type Comment = {
   created_at: string;
 };
 
-export function AdminBulletinDetailClient({ adminToken, postId }: { adminToken: string; postId: number }) {
+export function AdminBulletinDetailClient({ adminToken, postId, basePath }: { adminToken: string; postId: number; basePath: string }) {
   const auth = `Bearer ${adminToken}`;
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -81,7 +81,7 @@ export function AdminBulletinDetailClient({ adminToken, postId }: { adminToken: 
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/bulletin" className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-brand"><ArrowLeft className="w-3.5 h-3.5" /> Back to bulletin moderation</Link>
+      <Link href={`/${basePath}/bulletin`} className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-brand"><ArrowLeft className="w-3.5 h-3.5" /> Back to bulletin moderation</Link>
 
       {error && <div className="bg-pink-light text-pink-dark text-[12px] px-3 py-2 rounded">{error}</div>}
 

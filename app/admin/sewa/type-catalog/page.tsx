@@ -7,7 +7,7 @@ export const metadata = { title: 'Admin · Sewa type catalog' };
 export default function TypeCatalogPage() {
   return (
     <AdminPageChrome title="Sewa complaint-type catalog">
-      <TypeCatalogClient adminToken={process.env.ADMIN_TOKEN || ''} />
+      <TypeCatalogClient adminToken={process.env.ADMIN_TOKEN || ''} basePath={process.env.ADMIN_BASE_PATH || 'admin'} />
     </AdminPageChrome>
   );
 }

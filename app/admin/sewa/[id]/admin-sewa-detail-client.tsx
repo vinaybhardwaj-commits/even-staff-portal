@@ -45,7 +45,7 @@ type Resolution = { id: number | string; slug: string; label: string; icon: stri
 
 // SUGGESTED_TAGS now fetched at runtime from /api/admin/sewa/suggested-tags
 
-export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken: string; complaintId: number }) {
+export function AdminSewaDetailClient({ adminToken, complaintId, basePath }: { adminToken: string; complaintId: number; basePath: string }) {
   const auth = `Bearer ${adminToken}`;
   const [c, setC] = useState<Complaint | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -149,7 +149,7 @@ export function AdminSewaDetailClient({ adminToken, complaintId }: { adminToken:
 
   return (
     <div className="space-y-4">
-      <Link href="/admin/sewa" className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-brand"><ArrowLeft className="w-3.5 h-3.5" /> Back to all complaints</Link>
+      <Link href={`/${basePath}/sewa`} className="inline-flex items-center gap-1 text-[11px] text-[var(--color-text-muted)] hover:text-brand"><ArrowLeft className="w-3.5 h-3.5" /> Back to all complaints</Link>
 
       {error && <div className="bg-pink-light border border-pink/40 text-pink-dark text-[12px] px-3 py-2 rounded-lg">{error}</div>}
 

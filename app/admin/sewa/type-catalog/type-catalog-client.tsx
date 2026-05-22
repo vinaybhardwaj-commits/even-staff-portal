@@ -22,7 +22,7 @@ type CType = {
 type Field = { id: number | string; field_slug: string; field_label: string; field_type: string; required: boolean };
 type Resolution = { id: number | string; slug: string; label: string; icon: string | null; requires_note: boolean };
 
-export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
+export function TypeCatalogClient({ adminToken, basePath }: { adminToken: string; basePath: string }) {
   const auth = `Bearer ${adminToken}`;
   const [types, setTypes] = useState<CType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,7 +131,7 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
   return (
     <div className="space-y-4">
       <div className="mb-2">
-        <Link href="/admin/sewa" className="text-[11px] text-[var(--color-text-muted)] hover:text-brand">← Back to Sewa dashboard</Link>
+        <Link href={`/${basePath}/sewa`} className="text-[11px] text-[var(--color-text-muted)] hover:text-brand">← Back to Sewa dashboard</Link>
       </div>
 
       {error && <div className="bg-pink-light border border-pink/40 text-pink-dark text-[12px] px-3 py-2 rounded-lg">{error}</div>}
