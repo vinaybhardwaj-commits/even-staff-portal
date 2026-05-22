@@ -9,6 +9,11 @@
   --color-text-secondary: #4a5568;
   --color-text-muted: #7a8599;
   --color-border: #e2e6ec;
+  --color-brand: #0055ff;
+  --color-brand-dark: #0044cc;
+  --color-brand-faint: #e6eeff;
+  --color-navy: #002054;
+  --color-pink: #f96eb1;
 }
 
 html, body {

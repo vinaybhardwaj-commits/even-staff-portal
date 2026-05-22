@@ -6,7 +6,7 @@ const config: Config = {
     extend: {
       colors: {
         // Even brand palette per locked decision #11 / PRD §7.3
-        brand:   { DEFAULT: '#0055ff', dark: '#0044cc', faint: '#e6eeff' },
+        brand:   { DEFAULT: '#0055ff', dark: '#0044cc', light: '#2d75ff', faint: '#e6eeff' },
         navy:    { DEFAULT: '#002054', dark: '#001838' },
         pink:    { DEFAULT: '#f96eb1', light: '#fde8f2', dark: '#c4356b' },
         off:     '#fcfcfc',

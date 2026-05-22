@@ -1,0 +1,15 @@
+{
+  "name": "Even Staff Portal",
+  "short_name": "Even Portal",
+  "description": "Internal staff workspace for Even Hospital, Race Course Road.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f4f8",
+  "theme_color": "#0055ff",
+  "scope": "/",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ]
+}
