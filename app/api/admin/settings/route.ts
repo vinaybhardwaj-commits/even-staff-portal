@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getHomeLayout, setHomeLayout, DEFAULT_HOME_LAYOUT } from '@/lib/portal/settings';
 import { sql } from '@/lib/db';
+import { logAdminAction } from '@/lib/portal/audit';
 
 export const runtime = 'nodejs';
 
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
 
   // Write a record_versions snapshot too so settings has a history trail
   await setHomeLayout(next as Parameters<typeof setHomeLayout>[0]);
+  await logAdminAction('settings_save', 'home_layout', 0, {});
   await sql`
     INSERT INTO record_versions (entity_type, entity_id, version_num, snapshot, changed_by)
     SELECT 'home_layout', 0, COALESCE(MAX(version_num), 0) + 1, ${JSON.stringify(next)}::jsonb, 'Admin'
@@ -36,5 +38,6 @@ export async function DELETE(req: NextRequest) {
   const auth = req.headers.get('authorization') || '';
   if (!process.env.ADMIN_TOKEN || auth !== `Bearer ${process.env.ADMIN_TOKEN}`) return unauth();
   await setHomeLayout(DEFAULT_HOME_LAYOUT);
+  await logAdminAction('settings_reset', 'home_layout', 0, {});
   return NextResponse.json({ ok: true, home_layout: DEFAULT_HOME_LAYOUT });
 }

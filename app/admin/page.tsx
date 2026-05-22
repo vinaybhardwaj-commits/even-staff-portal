@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical, Bell, FileText } from 'lucide-react';
+import { Tv, Settings, Pin, MessageSquare, Phone, Link as LinkIcon, FlaskConical, Bell, FileText, Activity } from 'lucide-react';
 
 export const metadata = { title: 'Even Admin · Restricted' };
 
@@ -12,6 +12,7 @@ const SECTIONS: { href: string; label: string; icon: typeof Tv; status: 'live' |
   { href: '/admin/pilot',         label: 'Pilot apps',    icon: FlaskConical,  status: 'live' },
   { href: '/admin/contacts',      label: 'Contacts',      icon: Phone,         status: 'live' },
   { href: '/admin/settings',      label: 'Settings',      icon: Settings,      status: 'live' },
+  { href: '/admin/audit-log',     label: 'Audit log',     icon: Activity,      status: 'live' },
 ];
 
 export default function AdminLanding() {
@@ -26,7 +27,7 @@ export default function AdminLanding() {
           </div>
         </div>
         <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-6">
-          All 8 admin surfaces live. Settings (home grid layout, density, refresh interval) ships in SP.7b.
+          All 9 admin surfaces live. Settings (home grid layout, density, refresh interval) ships in SP.7b.
         </p>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

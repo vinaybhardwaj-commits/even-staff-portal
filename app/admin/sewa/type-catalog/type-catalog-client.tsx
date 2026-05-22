@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Plus, Trash2, ArrowRight, Archive, ArchiveRestore } from 'lucide-react';
+import { Loader2, Plus, Trash2, ArrowRight, Archive, ArchiveRestore, History } from 'lucide-react';
+import { VersionHistoryDrawer } from '@/components/admin/VersionHistoryDrawer';
 
 type CType = {
   id: number | string;
@@ -27,6 +28,7 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [historyFor, setHistoryFor] = useState<CType | null>(null);
   const [fieldsByType, setFieldsByType] = useState<Record<number, Field[]>>({});
   const [resByType, setResByType] = useState<Record<number, Resolution[]>>({});
 
@@ -176,6 +178,9 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
                       <button onClick={() => toggleRetire(t)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] hover:border-brand text-navy inline-flex items-center gap-1">
                         {t.retired_at ? <><ArchiveRestore className="w-3 h-3" /> Unretire</> : <><Archive className="w-3 h-3" /> Retire (preserves history)</>}
                       </button>
+                      <button onClick={() => setHistoryFor(t)} className="text-[10px] px-2 py-1 rounded border border-[var(--color-border)] hover:border-brand text-navy inline-flex items-center gap-1">
+                        <History className="w-3 h-3" /> History
+                      </button>
                     </div>
 
                     {/* Fields */}
@@ -241,6 +246,12 @@ export function TypeCatalogClient({ adminToken }: { adminToken: string }) {
             );
           })}
         </div>
+      )}
+
+      {historyFor && (
+        <VersionHistoryDrawer open onClose={() => setHistoryFor(null)}
+          entityType="complaint_type" entityId={Number(historyFor.id)} entityLabel={historyFor.name}
+          adminToken={adminToken} onRestored={refresh} />
       )}
     </div>
   );

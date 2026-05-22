@@ -16,6 +16,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { logAdminAction } from '@/lib/portal/audit';
 
 export const runtime = 'nodejs';
 
@@ -55,12 +56,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     case 'ack': {
       await sql`UPDATE staff_complaints SET status = 'ack', ack_at = COALESCE(ack_at, NOW()) WHERE id = ${id}`;
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'ack', 'Admin', ${JSON.stringify({})}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'assign': {
       const assignee = (p.assigned_to ?? '').trim();
       await sql`UPDATE staff_complaints SET assigned_to = ${assignee || null}, status = CASE WHEN status='open' THEN 'ack' ELSE status END, ack_at = COALESCE(ack_at, NOW()) WHERE id = ${id}`;
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'assign', 'Admin', ${JSON.stringify({ assigned_to: assignee })}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'severity_change': {
@@ -68,6 +71,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (!SEVERITIES.has(sev)) return NextResponse.json({ error: 'bad_severity' }, { status: 400 });
       await sql`UPDATE staff_complaints SET severity = ${sev} WHERE id = ${id}`;
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'severity_change', 'Admin', ${JSON.stringify({ to: sev })}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'status_change': {
@@ -75,12 +79,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       if (!STATUSES.has(st)) return NextResponse.json({ error: 'bad_status' }, { status: 400 });
       await sql`UPDATE staff_complaints SET status = ${st} WHERE id = ${id}`;
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'status_change', 'Admin', ${JSON.stringify({ to: st })}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'note': {
       const note = (p.note ?? '').trim();
       if (!note) return NextResponse.json({ error: 'note_required' }, { status: 400 });
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'note', 'Admin', ${JSON.stringify({ note: note.slice(0, 2000) })}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'resolve': {
@@ -116,6 +122,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta)
         VALUES (${id}, 'resolve', 'Admin', ${JSON.stringify({ resolution_id: resolutionId, resolution_is_other: isOther, notes: notes.slice(0, 2000) })}::jsonb)
       `;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     case 'add_tag':
@@ -128,6 +135,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
         await sql`UPDATE staff_complaints SET tags = array_remove(COALESCE(tags, '{}'::text[]), ${tag}) WHERE id = ${id}`;
       }
       await sql`INSERT INTO staff_complaint_events (complaint_id, event_type, actor, meta) VALUES (${id}, 'note', 'Admin', ${JSON.stringify({ tag_action: action, tag })}::jsonb)`;
+      await logAdminAction(action, 'complaint', id, {});
       return NextResponse.json({ ok: true });
     }
     default:

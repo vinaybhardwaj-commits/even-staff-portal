@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { logAdminAction } from '@/lib/portal/audit';
 import { saveVersion } from '@/lib/portal/versions';
 
 export const runtime = 'nodejs';
@@ -32,6 +33,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const rows = await sql`SELECT id, name, description, long_description, status, owner_name, owner_email, open_url, screenshot_url, sort_order, active FROM pilot_apps WHERE id = ${id}`;
   const row = (rows as { id: number; [k: string]: unknown }[])[0];
   if (row) await saveVersion('pilot_app', Number(row.id), row);
+  await logAdminAction('edit', 'pilot_app', id, {});
   return NextResponse.json({ ok: true });
 }
 
@@ -42,5 +44,6 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   const id = Number(idStr);
   if (!Number.isFinite(id) || id <= 0) return NextResponse.json({ error: 'bad_id' }, { status: 400 });
   await sql`UPDATE pilot_apps SET active = FALSE, updated_at = NOW() WHERE id = ${id}`;
+  await logAdminAction('delete', 'pilot_app', id, {});
   return NextResponse.json({ ok: true });
 }

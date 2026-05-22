@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
+import { logAdminAction } from '@/lib/portal/audit';
 
 export const runtime = 'nodejs';
 
@@ -34,6 +35,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   if (typeof payload.category === 'string') await sql`UPDATE videos SET category = ${payload.category.trim() || null} WHERE id = ${id}`;
   if ('expires_at' in payload) await sql`UPDATE videos SET expires_at = ${payload.expires_at || null} WHERE id = ${id}`;
 
+  await logAdminAction('edit', 'video', id, {});
   return NextResponse.json({ ok: true });
 }
 
