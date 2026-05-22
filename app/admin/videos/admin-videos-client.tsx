@@ -137,7 +137,7 @@ export function AdminVideosClient({ adminToken }: { adminToken: string }) {
           if (tr.ok && tj.url) {
             await fetch(`/api/admin/videos/${cj.id}`, {
               method: 'PATCH',
-              headers: { 'Content-Type': 'application/json', authorization: auth },
+              headers: { 'Content-Type': 'application/json', authorization: authHeader },
               body: JSON.stringify({ thumbnail_url: tj.url }),
             });
           }
