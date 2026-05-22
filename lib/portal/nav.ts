@@ -4,9 +4,12 @@
  * 13 items in 3 sections, NO admin link (admin lives at hidden URL only,
  * per locked decision #17).
  *
- * CDMSS clinical tools are external for SP.1 (they live at
- * even-cdmss.vercel.app until SP.8 cutover merges everything). After
- * the alias reassignment + repo merge, they become internal /ask, /ddx, etc.
+ * SP.8 (cutover): CDMSS clinical tools now use RELATIVE paths. The middleware
+ * in middleware.ts redirects /ask, /ddx, /drugs, /coach, /calculators, /review
+ * to the stable CDMSS underlying alias (even-cdmss-vinaybhardwaj-commits-projects
+ * .vercel.app). The vanity aliases even-cdmss.vercel.app + even-tutor.vercel.app
+ * now resolve to THIS staff-portal project, so a relative href is correct;
+ * the redirect happens server-side from whichever host the user is on.
  */
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -34,13 +37,13 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Resources',  href: '/resources', icon: LinkIcon,      section: 'workspace' },
   { label: 'Pilot apps', href: '/pilot',     icon: FlaskConical,  section: 'workspace' },
 
-  // CLINICAL TOOLS — external to CDMSS for SP.1 (alias-bridged at SP.8)
-  { label: 'Ask',    href: 'https://even-cdmss.vercel.app/ask',          icon: MessageCircle, external: true, section: 'clinical' },
-  { label: 'DDx',    href: 'https://even-cdmss.vercel.app/ddx',          icon: Sparkles,      external: true, section: 'clinical' },
-  { label: 'Drugs',  href: 'https://even-cdmss.vercel.app/drugs', icon: Pill,          external: true, section: 'clinical' },
-  { label: 'Calc',   href: 'https://even-cdmss.vercel.app/calculators',  icon: Calculator,    external: true, section: 'clinical' },
-  { label: 'Coach',  href: 'https://even-cdmss.vercel.app/coach',        icon: Brain,         external: true, section: 'clinical' },
-  { label: 'Review', href: 'https://even-cdmss.vercel.app/review',       icon: BookOpen,      external: true, section: 'clinical' },
+  // CLINICAL TOOLS — middleware redirects to CDMSS underlying alias (SP.8)
+  { label: 'Ask',    href: '/ask',          icon: MessageCircle, section: 'clinical' },
+  { label: 'DDx',    href: '/ddx',          icon: Sparkles,      section: 'clinical' },
+  { label: 'Drugs',  href: '/drugs',        icon: Pill,          section: 'clinical' },
+  { label: 'Calc',   href: '/calculators',  icon: Calculator,    section: 'clinical' },
+  { label: 'Coach',  href: '/coach',        icon: Brain,         section: 'clinical' },
+  { label: 'Review', href: '/review',       icon: BookOpen,      section: 'clinical' },
 
   // OPERATIONS
   { label: 'Sewa', href: '/sewa', icon: Bell, section: 'operations' },

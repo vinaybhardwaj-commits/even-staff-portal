@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Admin hidden-URL gate per PRD locked decision #17.
+// Admin hidden-URL gate per PRD locked decision #17 + SP.8 CDMSS redirect.
 //
-// All admin pages live at `/{ADMIN_BASE_PATH}/...` where ADMIN_BASE_PATH is a
-// 32-char URL-safe random slug stored in the env var. Probing /admin, /dashboard,
-// /cms, /wp-admin etc. returns a real 404 — no hint that an admin surface exists.
+// Layer 1 (this middleware):
+//   a) URL path gate for admin (hidden-URL rewrite + probe 404s).
+//   b) CDMSS-route redirect for SP.8 cutover: after even-cdmss.vercel.app
+//      reassigns to the staff-portal project, requests to /ask /ddx /drugs
+//      /coach /calculators /review (and sub-paths) at this project's host
+//      bounce 302 to the stable CDMSS underlying alias, preserving query
+//      strings + paths.
 //
-// Layer 1 (this middleware): URL path gate.
-// Layer 2 (API routes themselves): ADMIN_TOKEN bearer header required.
+// Layer 2 (API routes): ADMIN_TOKEN bearer header required for admin endpoints.
 
 const ADMIN_PROBE_PATHS = [
   '/admin',
@@ -22,8 +25,18 @@ const ADMIN_PROBE_PATHS = [
   '/.env',
 ];
 
+// CDMSS clinical-tool routes. After SP.8 alias reassignment, even-cdmss.vercel.app
+// resolves to THIS project, so we 302 these paths back to the project-level alias
+// that stays with CDMSS regardless of vanity-alias movement.
+const CDMSS_ROUTES = ['/ask', '/ddx', '/drugs', '/coach', '/calculators', '/review'];
+const CDMSS_TARGET_HOST = 'https://even-cdmss-vinaybhardwaj-commits-projects.vercel.app';
+
+function isCdmssRoute(pathname: string): boolean {
+  return CDMSS_ROUTES.some((r) => pathname === r || pathname.startsWith(r + '/'));
+}
+
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
   const adminBasePath = process.env.ADMIN_BASE_PATH;
 
   // Explicit admin-probe 404s (no leak that admin exists)
@@ -32,7 +45,6 @@ export function middleware(req: NextRequest) {
   }
 
   // If a configured ADMIN_BASE_PATH exists and the path starts with it, rewrite to /admin/*.
-  // Strip the secret slug from the URL the React app sees.
   if (adminBasePath && (pathname === `/${adminBasePath}` || pathname.startsWith(`/${adminBasePath}/`))) {
     const internalPath = pathname.replace(`/${adminBasePath}`, '/admin') || '/admin';
     const url = req.nextUrl.clone();
@@ -40,9 +52,16 @@ export function middleware(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  // Block direct access to the internal /admin route (only reachable via the rewrite above)
+  // Block direct /admin access (only reachable via the rewrite above)
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     return new NextResponse('Not Found', { status: 404 });
+  }
+
+  // SP.8 cutover: redirect CDMSS clinical-tool paths to the stable CDMSS deployment URL.
+  // Lives in middleware (not next.config redirects) so the rule sits next to other
+  // request-time routing logic and can evolve into a proxy in v1.x when CDMSS subtree-merges.
+  if (isCdmssRoute(pathname)) {
+    return NextResponse.redirect(`${CDMSS_TARGET_HOST}${pathname}${search}`, 302);
   }
 
   return NextResponse.next();
