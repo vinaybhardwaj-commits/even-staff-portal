@@ -20,6 +20,7 @@ export type SearchHit = {
 };
 
 export async function GET(req: NextRequest) {
+  try {
   const qRaw = (req.nextUrl.searchParams.get('q') || '').trim();
   if (qRaw.length < 2) return NextResponse.json({ hits: [] });
   const q = `%${qRaw.replace(/[%_]/g, (m) => '\\' + m)}%`;
@@ -60,4 +61,8 @@ export async function GET(req: NextRequest) {
   ];
 
   return NextResponse.json({ hits, q: qRaw });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: 'search_failed', detail: msg }, { status: 500 });
+  }
 }
