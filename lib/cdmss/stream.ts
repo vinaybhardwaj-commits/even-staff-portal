@@ -7,7 +7,7 @@
 //   { type: 'done',     ms }
 //   { type: 'error',    message }
 
-export type Stage = 'expanding' | 'retrieving' | 'reranking' | 'generating' | 'parsing' | 'persisting' | 'done';
+export type Stage = 'expanding' | 'variants' | 'retrieving' | 'reranking' | 'generating' | 'drafting' | 'reviewing' | 'revising' | 'finalizing' | 'parsing' | 'persisting' | 'done';
 
 export type ProgressEvent =
   | { type: 'progress'; stage: Stage; msg: string; ms?: number }
