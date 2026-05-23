@@ -6,7 +6,7 @@ import { COACH_MODEL, buildCoachSystemPrompt, buildRevealSystemPrompt, isRevealI
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const MAX_TURNS = 15; // total messages each side combined — hard cap
 

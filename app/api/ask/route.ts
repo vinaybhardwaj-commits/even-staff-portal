@@ -6,7 +6,7 @@ import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat, logStreamComplete } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const SYSTEM_PROMPT = `You are Even CDMSS, a medical study companion for residents and physicians.
 You answer questions using ONLY the excerpts provided below — they come from two source families:

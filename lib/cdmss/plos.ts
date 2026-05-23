@@ -112,11 +112,21 @@ function toPlosHit(d: PlosApiDoc): PlosHit | null {
  * in an LLM system/user prompt. Each hit gets a [P{n}] citation tag —
  * distinct from MKSAP's [1][2] so the model and downstream renderer can
  * tell sources apart.
+ *
+ * v1.4 P1d: abstracts are capped at 800 chars and hits at 3 in the prompt.
+ * Full abstracts can be 3KB each, and 5 of them was bloating the qwen2.5:14b
+ * context near its 16384 ceiling — inference slowed super-linearly and the
+ * Vercel function timed out before synthesis completed. The UI still shows
+ * the full hit list with longer previews; only the LLM context is trimmed.
  */
-export function formatPlosForPrompt(hits: PlosHit[]): string {
+export function formatPlosForPrompt(hits: PlosHit[], opts: { maxHits?: number; maxAbstractChars?: number } = {}): string {
   if (hits.length === 0) return '';
-  return hits.map((h, i) => {
+  const maxHits = opts.maxHits ?? 3;
+  const maxChars = opts.maxAbstractChars ?? 800;
+  const trimmed = hits.slice(0, maxHits);
+  return trimmed.map((h, i) => {
     const cite = `[P${i + 1}] ${h.authors.length ? h.authors.join(', ') + (h.authors.length === 3 ? ' et al.' : '') + '. ' : ''}${h.title}. PLOS ONE ${h.year}. doi:${h.doi}`;
-    return `--- PLOS ONE Excerpt P${i + 1} ---\n${cite}\nAbstract: ${h.abstract}\n`;
+    const abs = h.abstract.length > maxChars ? h.abstract.slice(0, maxChars) + '…' : h.abstract;
+    return `--- PLOS ONE Excerpt P${i + 1} ---\n${cite}\nAbstract: ${abs}\n`;
   }).join('\n');
 }

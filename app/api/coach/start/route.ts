@@ -6,7 +6,7 @@ import { COACH_MODEL, buildCoachSystemPrompt, parseLooseJson, Turn } from '@/lib
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type Body = { mode?: 'topic' | 'case'; topic?: string; case_text?: string; difficulty?: 'novice' | 'intermediate' | 'advanced' };
 
