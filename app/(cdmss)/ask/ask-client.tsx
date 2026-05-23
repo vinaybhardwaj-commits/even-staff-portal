@@ -119,7 +119,8 @@ export default function AskClient() {
           if (p) setPlosCitations(p);
         }
         else if (ev.type === 'token') { fullAnswer += ev.content; setAnswer(fullAnswer); }
-        else if (ev.type === 'critique') { setCritique({ severity: ev.severity as string, issue_count: ev.issue_count as number, details: ev.details as Record<string, unknown> }); }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        else if ((ev as any).type === 'critique') { const c = ev as unknown as { severity: string; issue_count: number; details: Record<string, unknown> }; setCritique({ severity: c.severity, issue_count: c.issue_count, details: c.details }); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
       });
