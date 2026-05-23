@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { searchPlos, formatPlosForPrompt } from '@/lib/cdmss/plos';
 import { sql } from '@/lib/cdmss/db';
 import { COACH_MODEL, buildCoachSystemPrompt, parseLooseJson, Turn } from '@/lib/cdmss/coach';
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
@@ -17,21 +18,24 @@ export async function POST(req: NextRequest) {
   if (!subject) return NextResponse.json({ error: 'topic or case_text required' }, { status: 400 });
   const difficulty = body.difficulty || 'intermediate';
 
-  // Retrieve top chunks for grounding
-  let result;
+  // v1.4 P1c: PLOS fan-out in parallel with retrieve()
+  let result, plosHits;
   try {
-    result = await retrieve(subject, { topK: 6, minSimilarity: 0.3 });
+    [result, plosHits] = await Promise.all([
+      retrieve(subject, { topK: 6, minSimilarity: 0.3 }),
+      searchPlos(subject, { rows: 4, yearsBack: 5 }),
+    ]);
   } catch (e) {
     return NextResponse.json({ error: 'retrieval failed', detail: String((e as Error).message) }, { status: 500 });
   }
   const hits = result.hits;
-  if (hits.length === 0) {
+  if (hits.length === 0 && plosHits.length === 0) {
     return NextResponse.json({ error: 'no relevant excerpts found' }, { status: 404 });
   }
 
   const contextBlock = hits.map((h, i) =>
     `--- Excerpt ${i + 1} (${h.book}${h.chapter ? ' · ' + h.chapter : ''}) ---\n${h.text.slice(0, 700)}`
-  ).join('\n\n');
+  ).join('\n\n') + (plosHits.length ? '\n\n' + formatPlosForPrompt(plosHits) : '');
 
   const system = buildCoachSystemPrompt(difficulty, mode, subject);
   const userMsg = `Excerpts (your grounding, do NOT quote to the learner):\n${contextBlock}\n\nThe learner has just initiated the session. Output the FIRST coach turn — a single Socratic opener question matched to the current difficulty. Use this exact JSON shape: {"evaluation":{"correctness":"clarifying","feedback":"Session start"},"difficulty_change":"stay","mastered":false,"next_turn":{"type":"question","content":"..."}}`;

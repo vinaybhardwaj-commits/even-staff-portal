@@ -11,6 +11,10 @@ type Citation = {
   item_number: string | null; chunk_type: string;
   similarity: number; preview: string;
 };
+type PlosCitation = {
+  n: number; kind: 'plos'; doi: string; title: string;
+  authors: string[]; year: number; url: string; full_url: string; preview: string;
+};
 type Dx = {
   diagnosis: string;
   likelihood?: 'low' | 'moderate' | 'high';
@@ -18,6 +22,7 @@ type Dx = {
   distinguishing_features?: string[];
   investigations?: string[];
   citation_ids?: number[];
+  plos_citation_ids?: string[];
 };
 type DdxResponse = {
   summary?: string;
@@ -26,6 +31,7 @@ type DdxResponse = {
   most_likely?: Dx[];
   other?: Dx[];
   citations?: Citation[];
+  plos_citations?: PlosCitation[];
   presentation?: string;
   duration_ms?: number;
   error?: string;
@@ -44,7 +50,7 @@ const LIKELIHOOD_COLORS: Record<string, string> = {
   low: 'bg-slate-100 text-slate-600',
 };
 
-function DxCard({ dx, idx, danger, onCite }: { dx: Dx; idx: number; danger?: boolean; onCite: (n: number) => void }) {
+function DxCard({ dx, idx, danger, onCite, onPlosCite }: { dx: Dx; idx: number; danger?: boolean; onCite: (n: number) => void; onPlosCite: (label: string) => void }) {
   const [open, setOpen] = useState(idx === 0);
   const lk = (dx.likelihood ?? 'moderate').toLowerCase();
   return (
@@ -62,11 +68,14 @@ function DxCard({ dx, idx, danger, onCite }: { dx: Dx; idx: number; danger?: boo
             <span className={`rounded-full px-2 py-0.5 font-semibold ${LIKELIHOOD_COLORS[lk] ?? LIKELIHOOD_COLORS.moderate}`}>
               {lk} likelihood
             </span>
-            {dx.citation_ids && dx.citation_ids.length > 0 && (
-              <span className="text-slate-400">
-                {dx.citation_ids.length} citation{dx.citation_ids.length !== 1 ? 's' : ''}
-              </span>
-            )}
+            {(() => {
+              const totalCites = (dx.citation_ids?.length || 0) + (dx.plos_citation_ids?.length || 0);
+              return totalCites > 0 ? (
+                <span className="text-slate-400">
+                  {totalCites} citation{totalCites !== 1 ? 's' : ''}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
         {open ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
@@ -98,7 +107,7 @@ function DxCard({ dx, idx, danger, onCite }: { dx: Dx; idx: number; danger?: boo
           )}
           {dx.citation_ids && dx.citation_ids.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sources:</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Textbook:</span>
               {dx.citation_ids.map((n) => (
                 <button
                   key={n}
@@ -106,6 +115,20 @@ function DxCard({ dx, idx, danger, onCite }: { dx: Dx; idx: number; danger?: boo
                   className="rounded-md bg-brand-faint px-1.5 py-0.5 text-[11px] font-semibold text-brand hover:bg-brand hover:text-white"
                 >
                   [{n}]
+                </button>
+              ))}
+            </div>
+          )}
+          {dx.plos_citation_ids && dx.plos_citation_ids.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">PLOS:</span>
+              {dx.plos_citation_ids.map((label) => (
+                <button
+                  key={label}
+                  onClick={() => onPlosCite(label)}
+                  className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-500 hover:text-white"
+                >
+                  [{label}]
                 </button>
               ))}
             </div>
@@ -128,6 +151,7 @@ export default function DdxClient() {
   const [error, setError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [openCites, setOpenCites] = useState<Record<number, boolean>>({});
+  const [plosOpenCites, setPlosOpenCites] = useState<Record<string, boolean>>({});
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [totalMs, setTotalMs] = useState<number | undefined>(undefined);
 
@@ -205,6 +229,13 @@ export default function DdxClient() {
       document.getElementById(`ddx-cite-${n}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 50);
     setTimeout(() => setHighlighted((h) => (h === n ? null : h)), 2000);
+  }
+  function onPlosCite(label: string) {
+    // label is 'P1', 'P2', etc.
+    setPlosOpenCites((p) => ({ ...p, [label]: true }));
+    setTimeout(() => {
+      document.getElementById(`ddx-plos-cite-${label}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
   }
 
   const cannot = data?.cannot_miss ?? [];
@@ -343,7 +374,7 @@ export default function DdxClient() {
                 <AlertTriangle className="h-4 w-4" /> Cannot-miss · rule out first
               </h2>
               <div className="space-y-2">
-                {cannot.map((dx, i) => <DxCard key={i} dx={dx} idx={i} danger onCite={onCite} />)}
+                {cannot.map((dx, i) => <DxCard key={i} dx={dx} idx={i} danger onCite={onCite} onPlosCite={onPlosCite} />)}
               </div>
             </section>
           )}
@@ -352,7 +383,7 @@ export default function DdxClient() {
             <section>
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">Most likely</h2>
               <div className="space-y-2">
-                {likely.map((dx, i) => <DxCard key={i} dx={dx} idx={i} onCite={onCite} />)}
+                {likely.map((dx, i) => <DxCard key={i} dx={dx} idx={i} onCite={onCite} onPlosCite={onPlosCite} />)}
               </div>
             </section>
           )}
@@ -361,7 +392,7 @@ export default function DdxClient() {
             <section>
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Other considerations</h2>
               <div className="space-y-2">
-                {other.map((dx, i) => <DxCard key={i} dx={dx} idx={i} onCite={onCite} />)}
+                {other.map((dx, i) => <DxCard key={i} dx={dx} idx={i} onCite={onCite} onPlosCite={onPlosCite} />)}
               </div>
             </section>
           )}
@@ -405,6 +436,46 @@ export default function DdxClient() {
                           {c.preview}…
                         </div>
                       )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          )}
+          {data?.plos_citations && data.plos_citations.length > 0 && (
+            <section className="mt-6">
+              <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+                <BookOpen className="h-3.5 w-3.5" /> PLOS ONE primary research ({data.plos_citations.length})
+              </h2>
+              <ol className="space-y-2">
+                {data.plos_citations.map((p) => {
+                  const label = `P${p.n}`;
+                  const isOpen = !!plosOpenCites[label];
+                  return (
+                    <li
+                      key={label}
+                      id={`ddx-plos-cite-${label}`}
+                      className="rounded-lg border border-amber-200 bg-amber-50/30 text-sm shadow-sm"
+                    >
+                      <button
+                        onClick={() => setPlosOpenCites((prev) => ({ ...prev, [label]: !isOpen }))}
+                        className="flex w-full items-start justify-between gap-2 px-3 py-2 text-left hover:bg-amber-50/60"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">[{label}]</span>
+                            <span className="truncate font-medium text-slate-800">{p.title}</span>
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            {p.authors.length > 0 && <span>{p.authors.join(', ')}{p.authors.length === 3 ? ' et al.' : ''} · </span>}
+                            <span>PLOS ONE {p.year}</span>
+                            <span className="mx-1">·</span>
+                            <a href={p.full_url} target="_blank" rel="noopener noreferrer" className="text-amber-700 hover:underline" onClick={(e) => e.stopPropagation()}>open ↗</a>
+                          </div>
+                        </div>
+                        {isOpen ? <ChevronUp className="h-4 w-4 shrink-0 text-amber-500" /> : <ChevronDown className="h-4 w-4 shrink-0 text-amber-500" />}
+                      </button>
+                      {isOpen && <div className="border-t border-amber-200 px-3 py-2 text-[13px] leading-relaxed text-slate-700">{p.preview}…</div>}
                     </li>
                   );
                 })}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { searchPlos, formatPlosForPrompt } from '@/lib/cdmss/plos';
 import { sql } from '@/lib/cdmss/db';
 import { COACH_MODEL, buildCoachSystemPrompt, buildRevealSystemPrompt, isRevealIntent, parseLooseJson, loadSession, computeAccuracy, Turn } from '@/lib/cdmss/coach';
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
@@ -35,12 +36,21 @@ export async function POST(req: NextRequest) {
     const userTurn: Turn = { role: 'user', content: userMsgForLog, timestamp: new Date().toISOString(), revealed: true };
 
     // Retrieve excerpts grounded on the topic + the previous question (richer than topic alone).
+    // v1.4 P1c: PLOS fan-out — uses just sess.topic (cleaner anchor than topic+question for PLOS).
     const retrievalQuery = `${sess.topic} ${previousQuestion}`;
     let hits: Awaited<ReturnType<typeof retrieve>>['hits'] = [];
-    try { hits = (await retrieve(retrievalQuery, { topK: 6, minSimilarity: 0.3, bm25Query: sess.topic })).hits; } catch {}
-    const contextBlock = hits.length
+    let plosHitsR: Awaited<ReturnType<typeof searchPlos>> = [];
+    try {
+      const [r, p] = await Promise.all([
+        retrieve(retrievalQuery, { topK: 6, minSimilarity: 0.3, bm25Query: sess.topic }),
+        searchPlos(sess.topic, { rows: 4, yearsBack: 5 }),
+      ]);
+      hits = r.hits;
+      plosHitsR = p;
+    } catch {}
+    const contextBlock = (hits.length
       ? hits.map((h, i) => `--- Excerpt ${i + 1} (${h.book}${h.chapter ? ' · ' + h.chapter : ''}) ---\n${h.text.slice(0, 700)}`).join('\n\n')
-      : '(no fresh excerpts retrieved)';
+      : '(no fresh excerpts retrieved)') + (plosHitsR.length ? '\n\n' + formatPlosForPrompt(plosHitsR) : '');
 
     const traceId = await startTrace('coach_reveal', { session_id: id, topic: sess.topic, difficulty: sess.difficulty, previous_question_chars: previousQuestion.length });
     let raw = '';

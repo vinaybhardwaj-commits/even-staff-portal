@@ -20,6 +20,10 @@ type Summary = {
   gaps: string[];
   suggested_next: string;
   accuracy: number;
+  sources_recap?: {
+    textbook: { n: number; id: number; book: string; chapter: string | null; page_start: number | null; page_end: number | null; item_number: string | null; similarity: number; preview: string }[];
+    plos: { n: number; doi: string; title: string; authors: string[]; year: number; url: string; full_url: string; preview: string }[];
+  };
 };
 
 const DIFFICULTY_COLOR: Record<Difficulty, string> = {
@@ -164,6 +168,7 @@ export default function CoachClient() {
       setSummary({
         summary: d.summary, concepts_mastered: d.concepts_mastered,
         gaps: d.gaps, suggested_next: d.suggested_next, accuracy: d.accuracy,
+        sources_recap: d.sources_recap,
       });
       setPhase('summary');
     } catch (e) { setError(String((e as Error).message)); }
@@ -301,6 +306,58 @@ export default function CoachClient() {
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suggested next session</h3>
             <p className="mt-1 text-sm text-slate-800">{summary.suggested_next}</p>
           </div>
+        )}
+
+        {summary.sources_recap && (summary.sources_recap.textbook.length > 0 || summary.sources_recap.plos.length > 0) && (
+          <details className="rounded-xl border border-slate-200 bg-white p-4">
+            <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-500 hover:text-brand">
+              Sources that grounded this session
+              <span className="ml-2 font-normal normal-case text-slate-400">
+                ({summary.sources_recap.textbook.length} textbook · {summary.sources_recap.plos.length} PLOS)
+              </span>
+            </summary>
+            {summary.sources_recap.textbook.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-brand">Textbook</div>
+                <ol className="mt-1.5 space-y-1.5">
+                  {summary.sources_recap.textbook.map((c) => (
+                    <li key={`tb-${c.n}`} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="rounded bg-brand-faint px-1 py-0.5 text-[10px] font-semibold text-brand">[{c.n}]</span>
+                        <span className="truncate font-medium text-slate-800">{c.book}</span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">
+                        {c.chapter && <span>{c.chapter} · </span>}
+                        {c.page_start && <span>p.{c.page_start} · </span>}
+                        <span>sim {c.similarity.toFixed(2)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+            {summary.sources_recap.plos.length > 0 && (
+              <div className="mt-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">PLOS ONE primary research</div>
+                <ol className="mt-1.5 space-y-1.5">
+                  {summary.sources_recap.plos.map((p) => (
+                    <li key={`plos-${p.n}`} className="rounded-md border border-amber-200 bg-amber-50/40 px-2.5 py-1.5 text-xs">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold text-amber-800">[P{p.n}]</span>
+                        <span className="truncate font-medium text-slate-800">{p.title}</span>
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-slate-500">
+                        {p.authors.length > 0 && <span>{p.authors.join(', ')}{p.authors.length === 3 ? ' et al.' : ''} · </span>}
+                        <span>PLOS ONE {p.year}</span>
+                        <span className="mx-1">·</span>
+                        <a href={p.full_url} target="_blank" rel="noopener noreferrer" className="text-amber-700 hover:underline">open ↗</a>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </details>
         )}
 
         <button

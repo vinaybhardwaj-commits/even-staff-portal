@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/cdmss/db';
+import { retrieve } from '@/lib/cdmss/retrieve';
+import { searchPlos } from '@/lib/cdmss/plos';
 import { COACH_MODEL, loadSession, computeAccuracy } from '@/lib/cdmss/coach';
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 
@@ -20,6 +22,20 @@ export async function POST(req: NextRequest) {
 
   const sess = await loadSession(id);
   if (!sess) return NextResponse.json({ error: 'session not found' }, { status: 404 });
+
+  // v1.4 P1c: fetch source recap (textbook + PLOS) for the end-of-session drawer.
+  // Fresh re-fetch by topic — cheap, no schema changes, gives a representative view
+  // of what content was available to ground this session.
+  let recapHits: Awaited<ReturnType<typeof retrieve>>['hits'] = [];
+  let recapPlos: Awaited<ReturnType<typeof searchPlos>> = [];
+  try {
+    const [r, p] = await Promise.all([
+      retrieve(sess.topic, { topK: 6, minSimilarity: 0.3 }),
+      searchPlos(sess.topic, { rows: 5, yearsBack: 5 }),
+    ]);
+    recapHits = r.hits;
+    recapPlos = p;
+  } catch { /* recap is best-effort; never blocks the end-of-session summary */ }
 
   const transcript = (sess.turns || []).map((t) => `${t.role.toUpperCase()}: ${t.content}`).join('\n\n');
   const accuracy = computeAccuracy(sess.turns || []);
@@ -58,6 +74,19 @@ export async function POST(req: NextRequest) {
       summary: parsed.summary || '',
       concepts_mastered: Array.isArray(parsed.concepts_mastered) ? parsed.concepts_mastered : [],
       gaps: Array.isArray(parsed.gaps) ? parsed.gaps : [],
+      sources_recap: {
+        textbook: recapHits.map((h, i) => ({
+          n: i + 1, id: h.id, book: h.book, chapter: h.chapter,
+          page_start: h.page_start, page_end: h.page_end, item_number: h.item_number,
+          similarity: Number(h.similarity.toFixed(3)),
+          preview: h.text.slice(0, 400),
+        })),
+        plos: recapPlos.map((p, i) => ({
+          n: i + 1, doi: p.doi, title: p.title, authors: p.authors,
+          year: p.year, url: p.url, full_url: p.full_url,
+          preview: p.abstract.slice(0, 400),
+        })),
+      },
       suggested_next: parsed.suggested_next || '',
     }, { headers: { 'X-Trace-Id': traceId } });
   } catch (e) {

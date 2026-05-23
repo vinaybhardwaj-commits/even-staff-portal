@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 
@@ -11,15 +12,16 @@ const DDX_MODEL = 'llama3.1:8b';
 const SYSTEM = `You generate a differential diagnosis as JSON. Use ONLY the excerpts below for clinical content.
 
 Return ONLY this JSON object, lowercase keys exactly as shown:
-{"summary":"one line","missing_info":["..."],"cannot_miss":[{"diagnosis":"name","likelihood":"high|moderate|low","why_consider":"<25 words","distinguishing_features":["<12 words each"],"investigations":["<12 words each"],"citation_ids":[1,2]}],"most_likely":[...same shape...],"other":[...same shape...]}
+{"summary":"one line","missing_info":["..."],"cannot_miss":[{"diagnosis":"name","likelihood":"high|moderate|low","why_consider":"<25 words","distinguishing_features":["<12 words each"],"investigations":["<12 words each"],"citation_ids":[1,2],"plos_citation_ids":["P1"]}],"most_likely":[...same shape...],"other":[...same shape...]}
 
 - cannot_miss: 2-3 dangerous/time-sensitive (worst-first)
 - most_likely: 2-3 by probability
 - other: 1-2 less likely
-- citation_ids = 1-based numbers from the excerpts. Cite every claim.
+- citation_ids = 1-based numbers from the MEDICAL EXCERPTS (textbook). Cite every textbook claim.
+- plos_citation_ids = strings like "P1", "P2" from PLOS ONE ABSTRACTS, if any inform the diagnosis. May be empty array [].
 - No prose, no markdown fences, lowercase keys.`;
 
-type Body = { age?: number | string; sex?: string; cc?: string; history?: string; exam?: string; vitals?: string };
+type Body = { age?: number | string; sex?: string; cc?: string; history?: string; exam?: string; vitals?: string; includePlos?: boolean };
 
 function buildPresentation(b: Body): { display: string; queryHint: string } {
   const parts: string[] = [];
@@ -62,13 +64,18 @@ export async function POST(req: NextRequest) {
     let outcomeMsg: string | undefined;
     try {
       emit({ type: 'progress', stage: 'expanding', msg: 'Building clinical summary, expanding query…' });
-      // D12.2: BM25 leg gets just the chief complaint (the highest-IDF clinical anchor).
-      // The full queryHint includes "Age / Sex; Chief complaint:; Key history:; Exam:; Vitals:"
-      // boilerplate that AND-tokenizes to ~zero matches.
-      const result = await retrieve(queryHint || display, { topK: 8, minSimilarity: 0.4, bm25Query: (body.cc || '').trim() });
+      // D12.2: BM25 leg gets just the chief complaint (highest-IDF clinical anchor).
+      // v1.4 P1b: PLOS fan-out — uses the chief complaint as the PLOS query
+      // (cleaner than the full queryHint which is heavy on boilerplate).
+      const includePlos = body.includePlos !== false;  // default true
+      const plosQuery = (body.cc || queryHint || display).trim();
+      const [result, plosHits] = await Promise.all([
+        retrieve(queryHint || display, { topK: 8, minSimilarity: 0.4, bm25Query: (body.cc || '').trim() }),
+        includePlos ? searchPlos(plosQuery, { rows: 5, yearsBack: 5 }) : Promise.resolve([] as PlosHit[]),
+      ]);
       const hits = result.hits;
-      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} excerpts`, ms: Date.now() - t0 });
-      if (hits.length === 0) { emit({ type: 'error', message: 'no excerpts above threshold — presentation may be too vague' }); outcome = 'error'; outcomeMsg = 'no excerpts above threshold'; close(); return; }
+      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} textbook + ${plosHits.length} PLOS excerpts`, ms: Date.now() - t0 });
+      if (hits.length === 0 && plosHits.length === 0) { emit({ type: 'error', message: 'no excerpts above threshold — presentation may be too vague' }); outcome = 'error'; outcomeMsg = 'no excerpts above threshold'; close(); return; }
 
       const citations = hits.map((h, i) => ({
         n: i + 1, id: h.id, book: h.book, chapter: h.chapter,
@@ -77,10 +84,16 @@ export async function POST(req: NextRequest) {
         similarity: Number(h.similarity.toFixed(3)),
         preview: h.text.slice(0, 600),
       }));
-      emit({ type: 'sources', items: citations });
+      const plosCitations = plosHits.map((p, i) => ({
+        n: i + 1, kind: 'plos' as const, doi: p.doi, title: p.title,
+        authors: p.authors, year: p.year, url: p.url, full_url: p.full_url,
+        preview: p.abstract.slice(0, 600),
+      }));
+      emit({ type: 'sources', items: citations, plos: plosCitations });
 
       const contextBlock = hits.map((h, i) => `--- Excerpt ${i + 1} ---\n[${i + 1}] ${h.book}${h.chapter ? ' · ' + h.chapter : ''}${h.page_start ? ' · p.' + h.page_start : ''}\n${h.text}`).join('\n\n');
-      const userMsg = `CLINICAL PRESENTATION:\n${display}\n\nMEDICAL EXCERPTS:\n${contextBlock}\n\nOutput ONLY the JSON object now, starting with {. No prose, no markdown fences.`;
+      const plosBlock = formatPlosForPrompt(plosHits);
+      const userMsg = `CLINICAL PRESENTATION:\n${display}\n\nMEDICAL EXCERPTS:\n${contextBlock || '(none)'}\n\n${plosBlock ? 'PLOS ONE ABSTRACTS:\n' + plosBlock + '\n\n' : ''}Output ONLY the JSON object now, starting with {. No prose, no markdown fences.`;
 
       emit({ type: 'progress', stage: 'generating', msg: `Reasoning with ${DDX_MODEL}…`, ms: Date.now() - t0 });
       const r = await tracedChat(traceId, 'ddx_generation', {
@@ -106,6 +119,7 @@ export async function POST(req: NextRequest) {
           most_likely: Array.isArray(parsed.most_likely) ? parsed.most_likely : [],
           other: Array.isArray(parsed.other) ? parsed.other : [],
           citations,
+          plos_citations: plosCitations,
           presentation: display,
         },
       });
