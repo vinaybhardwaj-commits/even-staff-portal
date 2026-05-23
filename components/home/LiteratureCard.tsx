@@ -2,11 +2,13 @@ import { ExternalLink, BookOpen, Newspaper } from 'lucide-react';
 import { getResources } from '@/lib/portal/reads';
 
 export async function LiteratureCard() {
-  // Surface the two Clinical-reference resources by url (Cureus + UpToDate).
+  // Surface every resource tagged with the Clinical-reference category.
+  // Admin curates the list from /even-admin/resources (set category =
+  // 'Clinical reference' or 'Medical Literature'). ResourcesCard
+  // excludes these categories so each item shows in exactly one card.
   const all = await getResources(50);
-  const cureus = all.find((r) => r.url.includes('cureus.com'));
-  const uptodate = all.find((r) => r.url.includes('sniv3r2.github.io'));
-  const items = [cureus, uptodate].filter(Boolean) as typeof all;
+  const LIT_CATEGORIES = new Set(['Clinical reference', 'Medical Literature', 'Literature']);
+  const items = all.filter((r) => r.category && LIT_CATEGORIES.has(r.category));
 
   return (
     <section className="h-full flex flex-col bg-white rounded-xl border border-[var(--color-border)] hover:shadow-card hover:-translate-y-0.5 transition-all duration-150 overflow-hidden">

@@ -3,7 +3,11 @@ import { getResources } from '@/lib/portal/reads';
 import { isNewUndatedByIndex } from '@/lib/portal/newness';
 
 export async function ResourcesCard() {
-  const items = await getResources();
+  // Exclude categories that live in their own dedicated card
+  // (LiteratureCard shows these). One row, one card.
+  const LIT_CATEGORIES = new Set(['Clinical reference', 'Medical Literature', 'Literature']);
+  const all = await getResources();
+  const items = all.filter((r) => !r.category || !LIT_CATEGORIES.has(r.category));
   // NEW = position 0 in the (created_at DESC)-ordered "undated" view.
   // Our query orders pinned-first then sort_order, so we re-sort a shadow
   // copy by created_at DESC for the NEW flag specifically.
