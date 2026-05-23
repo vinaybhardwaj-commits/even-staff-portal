@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
   const batch = Math.min(500, Math.max(1, parseInt(url.searchParams.get('batch') || '50', 10)));
 
   const remainingRows = await sql`
-    SELECT COUNT(*)::int AS n FROM mksap_chunks WHERE embedding_v2 IS NULL
+    SELECT COUNT(*)::int AS n FROM mksap_chunks WHERE embedding_v2 IS NULL AND text IS NOT NULL AND length(text) > 0 AND (source_quality_weight IS NULL OR source_quality_weight >= 0)
   ` as { n: number }[];
   const remainingBefore = remainingRows[0]?.n ?? 0;
   if (remainingBefore === 0) {
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
   const rows = await sql`
     SELECT id, text, book, source, chunk_type, token_count
     FROM mksap_chunks
-    WHERE embedding_v2 IS NULL AND text IS NOT NULL AND length(text) > 0
+    WHERE embedding_v2 IS NULL AND text IS NOT NULL AND length(text) > 0 AND (source_quality_weight IS NULL OR source_quality_weight >= 0)
     ORDER BY id ASC
     LIMIT ${batch}
   ` as ChunkRow[];
@@ -103,7 +103,9 @@ export async function POST(req: NextRequest) {
       await sql`UPDATE mksap_chunks SET embedding_v2 = ${vlit}::vector, source_quality_weight = ${weight} WHERE id = ${row.id}`;
       processed++;
     } catch (e: unknown) {
-      errors.push({ id: row.id, error: e instanceof Error ? e.message : String(e) });
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push({ id: row.id, error: msg });
+      try { await sql`UPDATE mksap_chunks SET source_quality_weight = -1 WHERE id = ${row.id}`; } catch {}
     }
   }
 
