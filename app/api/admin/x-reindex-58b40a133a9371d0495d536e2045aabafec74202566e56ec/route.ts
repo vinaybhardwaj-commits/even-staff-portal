@@ -50,7 +50,10 @@ export async function POST(req: NextRequest) {
     ` as { populated: number; missing: number }[];
     const populated = r[0]?.populated ?? 0;
     const missing = r[0]?.missing ?? 0;
-    if (missing > 0) return NextResponse.json({ error: `incomplete: ${missing} missing`, populated, missing }, { status: 409 });
+    // Allow index build when remaining NULL rows are only chronic-fails (sqw < 0) or empty-text.
+    const reindexableRows = await sql`SELECT COUNT(*)::int AS n FROM mksap_chunks WHERE embedding_v2 IS NULL AND text IS NOT NULL AND length(text) > 0 AND (source_quality_weight IS NULL OR source_quality_weight >= 0)` as { n: number }[];
+    const stillReindexable = reindexableRows[0]?.n ?? 0;
+    if (stillReindexable > 0) return NextResponse.json({ error: `reindex incomplete: ${stillReindexable} reindexable rows remain`, populated, missing, stillReindexable }, { status: 409 });
     const lists = Math.max(10, Math.min(500, Math.round(Math.sqrt(populated))));
     try { await (sql as unknown as (q: string) => Promise<unknown>)(`CREATE INDEX IF NOT EXISTS idx_mksap_chunks_embedding_v2 ON mksap_chunks USING ivfflat (embedding_v2 vector_cosine_ops) WITH (lists = ${lists})`); }
     catch (e: unknown) { return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
