@@ -65,6 +65,9 @@ export default function AskClient() {
   const sourcesRef = useRef<HTMLDivElement | null>(null);
   const [plosCitations, setPlosCitations] = useState<PlosCitation[]>([]);
   const [includePlos, setIncludePlos] = useState(true);
+  const [multiQuery, setMultiQuery] = useState(true);
+  const [selfCritique, setSelfCritique] = useState(true);
+  const [critique, setCritique] = useState<{ severity: string; issue_count: number; details: Record<string, unknown> } | null>(null);
 
   function toggleVoice() {
     if (voiceActive) { recRef.current?.stop(); return; }
@@ -97,14 +100,14 @@ export default function AskClient() {
   }
 
   async function submit(q: string) {
-    setQuestion(q); setAnswer(''); setCitations([]); setPlosCitations([]); setError(null); setExpanded({}); setHighlighted(null);
+    setQuestion(q); setAnswer(''); setCitations([]); setPlosCitations([]); setCritique(null); setError(null); setExpanded({}); setHighlighted(null);
     setTrace([]); setTotalMs(undefined); setLoading(true);
     abortRef.current?.abort();
     const ctrl = new AbortController(); abortRef.current = ctrl;
     const t0 = Date.now();
     let fullAnswer = ''; let citationsLocal: Citation[] = [];
     try {
-      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos }), signal: ctrl.signal });
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos, multiQuery, selfCritique }), signal: ctrl.signal });
       if (!r.ok) { setError(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`); setLoading(false); return; }
       await consumeNdjson(r, (ev) => {
         if (ev.type === 'progress') pushTrace(ev.stage, ev.msg, ev.ms);
@@ -116,6 +119,7 @@ export default function AskClient() {
           if (p) setPlosCitations(p);
         }
         else if (ev.type === 'token') { fullAnswer += ev.content; setAnswer(fullAnswer); }
+        else if (ev.type === 'critique') { setCritique({ severity: ev.severity as string, issue_count: ev.issue_count as number, details: ev.details as Record<string, unknown> }); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
       });
@@ -171,11 +175,61 @@ export default function AskClient() {
         >
           {includePlos ? '✓ ' : ''}PLOS ONE (last 5y, Medicine)
         </button>
+        <span className="text-slate-300">|</span>
+        <span className="text-[11px] uppercase tracking-wider text-slate-400">Pipeline</span>
+        <button
+          type="button"
+          onClick={() => setMultiQuery((v) => !v)}
+          disabled={loading}
+          aria-pressed={multiQuery}
+          title="Generate 4 query variants for richer recall"
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${multiQuery ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:border-violet-400'}`}
+        >
+          {multiQuery ? '✓ ' : ''}Multi-query
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelfCritique((v) => !v)}
+          disabled={loading}
+          aria-pressed={selfCritique}
+          title="Audit + revise the draft before returning"
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${selfCritique ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-400'}`}
+        >
+          {selfCritique ? '✓ ' : ''}Self-critique
+        </button>
       </div>
 
       {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} /></div>}
 
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
+
+      {critique && critique.issue_count > 0 && (
+        <details className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs">
+          <summary className="cursor-pointer font-medium text-emerald-900 hover:text-emerald-700">
+            ✓ Audit pass found {critique.issue_count} issue{critique.issue_count !== 1 ? 's' : ''} in the draft — revision applied ({critique.severity})
+          </summary>
+          <div className="mt-2 space-y-1.5 text-emerald-900">
+            {(() => {
+              const d = critique.details as Record<string, string[]>;
+              const sections: { label: string; items: string[] | undefined }[] = [
+                { label: 'Unsupported claims', items: d.unsupported_claims },
+                { label: 'Missing caveats', items: d.missing_caveats },
+                { label: 'Clinical errors', items: d.clinical_errors },
+                { label: 'Citation problems', items: d.citation_problems },
+                { label: 'Missing evidence', items: d.missing_relevant_evidence },
+              ];
+              return sections.filter((s) => s.items && s.items.length > 0).map((sec) => (
+                <div key={sec.label}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{sec.label}</div>
+                  <ul className="ml-4 list-disc text-[11px] leading-snug">
+                    {sec.items!.map((it, i) => <li key={i}>{it}</li>)}
+                  </ul>
+                </div>
+              ));
+            })()}
+          </div>
+        </details>
+      )}
 
       {(answer || loading) && (
         <article className="mt-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

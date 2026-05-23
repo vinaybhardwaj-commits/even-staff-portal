@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
-import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
+import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { TEXT_MODEL } from '@/lib/cdmss/llm';
+import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat, logStreamComplete } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 180;  // self-critique adds 2 extra LLM passes
 
 const SYSTEM_PROMPT = `You are Even CDMSS, a medical study companion for residents and physicians.
 You answer questions using ONLY the excerpts provided below — they come from two source families:
@@ -15,14 +16,43 @@ You answer questions using ONLY the excerpts provided below — they come from t
 
 Rules:
 - Be concise, precise, and clinically useful — the audience is a working physician.
-- Cite the source for every clinical claim using bracketed numbers like [1], [2] that map to the excerpts.
+- Cite the source for every clinical claim using bracketed numbers like [1], [2] or [P1].
 - If the excerpts do not cover the question, say so plainly. Do not invent.
 - If an excerpt looks garbled or nonsensical, ignore it rather than quoting it.
 - Match the voice of MKSAP: structured, evidence-based, practical.
 - Prefer textbook excerpts for established clinical guidance; prefer PLOS for recent primary evidence and emerging biomarkers.`;
 
+const CRITIQUE_SYSTEM = `You are a clinical accuracy auditor. You are reviewing a draft answer written by an AI medical study companion.
+
+Given (1) the original question, (2) the available source excerpts (with citation tags [1]..[n] and [P1]..[Pn]), and (3) the draft answer, you must identify problems in the draft.
+
+Output ONLY a JSON object of this exact shape:
+{
+  "unsupported_claims": ["claim that isn't backed by the cited source", ...],
+  "missing_caveats": ["important caveat or contraindication the draft omitted", ...],
+  "clinical_errors": ["factual or reasoning error", ...],
+  "citation_problems": ["wrong source attributed, missing citation, etc.", ...],
+  "missing_relevant_evidence": ["important excerpt the draft ignored", ...],
+  "needs_revision": true | false,
+  "overall_severity": "none" | "minor" | "moderate" | "major"
+}
+
+Empty arrays are fine. Set needs_revision=true if ANY array has entries OR if you found clinical_errors of any severity. If the draft is solid, return needs_revision=false and empty arrays.
+
+Be specific and actionable — each item should be a concrete fix the writer can apply. No prose outside the JSON.`;
+
+const REVISION_SYSTEM = `You are Even CDMSS revising your own draft answer based on a clinical auditor's critique.
+
+You will receive:
+1. The original question
+2. The source excerpts (with citation tags)
+3. Your earlier draft
+4. The auditor's critique JSON (unsupported claims, missing caveats, clinical errors, etc.)
+
+Rewrite the draft to fix every issue. Keep what's correct, correct what's wrong, add what's missing. Cite every clinical claim using the same [n] / [P{n}] format. Do not include any meta-commentary about the revision process — output the final clean answer the physician will read.`;
+
 export async function POST(req: NextRequest) {
-  let body: { question?: string; bookFilter?: string; includePlos?: boolean };
+  let body: { question?: string; bookFilter?: string; includePlos?: boolean; multiQuery?: boolean; selfCritique?: boolean };
   try { body = await req.json(); } catch {
     return new Response(JSON.stringify({ error: 'invalid json' }), { status: 400 });
   }
@@ -30,26 +60,38 @@ export async function POST(req: NextRequest) {
   if (!question) {
     return new Response(JSON.stringify({ error: 'question is required' }), { status: 400 });
   }
+  const useMultiQuery = body.multiQuery !== false;   // default true
+  const useSelfCritique = body.selfCritique !== false;  // default true
 
   const { stream, emit, close } = makeNdjsonStream();
   const t0 = Date.now();
-  const traceId = await startTrace('ask', { question, bookFilter: body.bookFilter });
+  const traceId = await startTrace('ask', { question, bookFilter: body.bookFilter, multiQuery: useMultiQuery, selfCritique: useSelfCritique });
 
   (async () => {
     let outcome: 'success' | 'error' | 'partial' = 'success';
     let outcomeMsg: string | undefined;
     try {
-      emit({ type: 'progress', stage: 'expanding', msg: 'Rewriting query for semantic search…' });
-      // Fire MKSAP retrieval and PLOS in PARALLEL — PLOS adds ~500-2000ms of network
-      // latency that we'd otherwise stack onto the critical path. Promise.all means
-      // total wait = max(retrieve, plos) instead of retrieve + plos.
-      const includePlos = body.includePlos !== false;  // default true
-      const [result, plosHits] = await Promise.all([
-        retrieve(question, { bookFilter: body.bookFilter, topK: 8 }),
-        includePlos ? searchPlos(question, { rows: 5, yearsBack: 5 }) : Promise.resolve([] as PlosHit[]),
-      ]);
-      const hits = result.hits;
-      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} MKSAP/StatPearls + ${plosHits.length} PLOS ONE excerpts`, ms: Date.now() - t0 });
+      // ── Phase 1: RETRIEVAL ──────────────────────────────────────────────
+      emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Rewriting query for semantic search…' });
+      const includePlos = body.includePlos !== false;
+
+      const retrievalPromise = useMultiQuery
+        ? retrieveMultiQuery(question, { bookFilter: body.bookFilter, topK: 8 })
+        : retrieve(question, { bookFilter: body.bookFilter, topK: 8 }).then((r) => ({ hits: r.hits, variants: [question], perVariantCounts: [r.hits.length] }));
+      const plosPromise: Promise<PlosHit[]> = includePlos ? searchPlos(question, { rows: 5, yearsBack: 5 }) : Promise.resolve([]);
+
+      const [retrieveResult, plosHits] = await Promise.all([retrievalPromise, plosPromise]);
+      const hits = retrieveResult.hits;
+
+      if (useMultiQuery && retrieveResult.variants.length > 1) {
+        emit({
+          type: 'progress',
+          stage: 'variants',
+          msg: `Generated ${retrieveResult.variants.length - 1} query variants: ${retrieveResult.variants.slice(1).map((v) => `"${v.slice(0, 50)}${v.length > 50 ? '…' : ''}"`).join(' · ')}`,
+          ms: Date.now() - t0,
+        });
+      }
+      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} textbook + ${plosHits.length} PLOS ONE excerpts (fused from ${retrieveResult.variants.length} ${retrieveResult.variants.length === 1 ? 'query' : 'queries'})`, ms: Date.now() - t0 });
 
       if (hits.length === 0 && plosHits.length === 0) {
         emit({ type: 'error', message: 'no relevant excerpts above similarity threshold' });
@@ -58,7 +100,6 @@ export async function POST(req: NextRequest) {
         return;
       }
 
-      // Internal-source citations — preserve existing shape
       const sources = hits.map((h, i) => ({
         n: i + 1, id: h.id, book: h.book, chapter: h.chapter,
         page_start: h.page_start, page_end: h.page_end,
@@ -66,7 +107,6 @@ export async function POST(req: NextRequest) {
         similarity: Number(h.similarity.toFixed(3)),
         preview: h.text.slice(0, 600),
       }));
-      // PLOS citations rendered with kind:'plos' so the client can style them as a separate chip
       const plosSources = plosHits.map((p, i) => ({
         n: i + 1, kind: 'plos' as const, doi: p.doi, title: p.title,
         authors: p.authors, year: p.year, url: p.url, full_url: p.full_url,
@@ -78,31 +118,116 @@ export async function POST(req: NextRequest) {
         const cite = `[${i + 1}] ${h.book}${h.chapter ? ' · ' + h.chapter : ''}${h.page_start ? ' · p.' + h.page_start : ''}${h.item_number ? ' · Item ' + h.item_number : ''}`;
         return `--- Excerpt ${i + 1} ---\n${cite}\n${h.text}\n`;
       }).join('\n');
-
       const plosBlock = formatPlosForPrompt(plosHits);
+      const sourceBlock = `MKSAP / StatPearls / UpToDate Excerpts:\n${contextBlock || '(none)'}\n\n${plosBlock ? 'PLOS ONE Primary Research Abstracts:\n' + plosBlock + '\n\n' : ''}`;
 
-      const userMsg = `Question:\n${question}\n\nMKSAP / StatPearls / UpToDate Excerpts:\n${contextBlock || '(none)'}\n\n${plosBlock ? 'PLOS ONE Primary Research Abstracts:\n' + plosBlock + '\n\n' : ''}Answer using only these excerpts. Cite textbook claims with [n] and PLOS abstracts with [P{n}].`;
-      emit({ type: 'progress', stage: 'generating', msg: `Generating answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
+      // ── Phase 2: DRAFT (non-streaming if self-critique enabled) ──────────
+      let draftAnswer = '';
+      if (useSelfCritique) {
+        emit({ type: 'progress', stage: 'drafting', msg: `Drafting answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
+        const draftStart = Date.now();
+        const draftRes = await tracedChat(traceId, 'draft', {
+          model: TEXT_MODEL,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Answer using only these excerpts. Cite textbook claims with [n] and PLOS abstracts with [P{n}].` },
+          ],
+          temperature: 0.2,
+          stream: false,
+          ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+        });
+        draftAnswer = (draftRes as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim() || '';
+        await logStreamComplete(traceId, 'draft', draftAnswer, draftStart, { model: TEXT_MODEL });
 
-      const llmStart = Date.now();
-      const completion = await tracedChat(traceId, 'answer', {
-        model: TEXT_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userMsg },
-        ],
-        temperature: 0.2,
-        stream: true,
-        ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
-      });
+        // ── Phase 3: CRITIQUE ──────────────────────────────────────────────
+        emit({ type: 'progress', stage: 'reviewing', msg: 'Auditing draft for unsupported claims, missing caveats, clinical errors…', ms: Date.now() - t0 });
+        const critiqueStart = Date.now();
+        let critiqueJson: {
+          unsupported_claims?: string[]; missing_caveats?: string[]; clinical_errors?: string[];
+          citation_problems?: string[]; missing_relevant_evidence?: string[];
+          needs_revision?: boolean; overall_severity?: string;
+        } = { needs_revision: false };
+        try {
+          const critiqueRes = await tracedChat(traceId, 'critique', {
+            model: TEXT_MODEL,
+            messages: [
+              { role: 'system', content: CRITIQUE_SYSTEM },
+              { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Draft answer to audit:\n${draftAnswer}\n\nOutput the JSON critique now.` },
+            ],
+            temperature: 0.1,
+            stream: false,
+            max_tokens: 800,
+            ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+          });
+          let critiqueRaw = (critiqueRes as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim() || '{}';
+          if (critiqueRaw.startsWith('```')) critiqueRaw = critiqueRaw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+          const a = critiqueRaw.indexOf('{'); const b = critiqueRaw.lastIndexOf('}');
+          if (a >= 0 && b > a) critiqueRaw = critiqueRaw.slice(a, b + 1);
+          critiqueJson = JSON.parse(critiqueRaw);
+        } catch (e) {
+          console.warn('[ask critique] parse failed', (e as Error).message);
+        }
+        await logStreamComplete(traceId, 'critique', JSON.stringify(critiqueJson), critiqueStart, { model: TEXT_MODEL });
 
-      // Collect full content as we stream so we can log it once the stream is done.
-      let fullContent = '';
-      for await (const part of completion) {
-        const delta = part.choices?.[0]?.delta?.content ?? '';
-        if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
+        const issueCount = (critiqueJson.unsupported_claims?.length || 0)
+          + (critiqueJson.missing_caveats?.length || 0)
+          + (critiqueJson.clinical_errors?.length || 0)
+          + (critiqueJson.citation_problems?.length || 0)
+          + (critiqueJson.missing_relevant_evidence?.length || 0);
+
+        emit({
+          type: 'critique',
+          severity: critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none'),
+          issue_count: issueCount,
+          details: critiqueJson,
+        });
+
+        // ── Phase 4: REVISION (streaming) — only if critique flagged issues ────
+        if (critiqueJson.needs_revision && issueCount > 0) {
+          emit({ type: 'progress', stage: 'revising', msg: `Revising to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
+          const revStart = Date.now();
+          const revRes = await tracedChat(traceId, 'revision', {
+            model: TEXT_MODEL,
+            messages: [
+              { role: 'system', content: REVISION_SYSTEM },
+              { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Earlier draft:\n${draftAnswer}\n\nAuditor's critique (JSON):\n${JSON.stringify(critiqueJson, null, 2)}\n\nOutput the revised final answer now.` },
+            ],
+            temperature: 0.2,
+            stream: true,
+            ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+          });
+          let fullContent = '';
+          for await (const part of revRes) {
+            const delta = part.choices?.[0]?.delta?.content ?? '';
+            if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
+          }
+          await logStreamComplete(traceId, 'revision', fullContent, revStart, { model: TEXT_MODEL });
+        } else {
+          // Draft was clean — stream it back token-by-token so the UI feels live
+          emit({ type: 'progress', stage: 'finalizing', msg: 'Draft passed audit — no revision needed', ms: Date.now() - t0 });
+          for (const ch of draftAnswer) emit({ type: 'token', content: ch });
+        }
+      } else {
+        // Self-critique disabled — original single-pass streaming behavior
+        emit({ type: 'progress', stage: 'generating', msg: `Generating answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
+        const llmStart = Date.now();
+        const completion = await tracedChat(traceId, 'answer', {
+          model: TEXT_MODEL,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Answer using only these excerpts. Cite textbook claims with [n] and PLOS abstracts with [P{n}].` },
+          ],
+          temperature: 0.2,
+          stream: true,
+          ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+        });
+        let fullContent = '';
+        for await (const part of completion) {
+          const delta = part.choices?.[0]?.delta?.content ?? '';
+          if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
+        }
+        await logStreamComplete(traceId, 'answer', fullContent, llmStart, { model: TEXT_MODEL });
       }
-      await logStreamComplete(traceId, 'answer', fullContent, llmStart, { model: TEXT_MODEL });
       emit({ type: 'done', ms: Date.now() - t0 });
     } catch (e) {
       outcome = 'error';
