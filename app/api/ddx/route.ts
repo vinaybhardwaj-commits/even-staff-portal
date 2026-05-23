@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 const DDX_MODEL = 'llama3.1:8b';
 
@@ -21,7 +22,33 @@ Return ONLY this JSON object, lowercase keys exactly as shown:
 - plos_citation_ids = strings like "P1", "P2" from PLOS ONE ABSTRACTS, if any inform the diagnosis. May be empty array [].
 - No prose, no markdown fences, lowercase keys.`;
 
-type Body = { age?: number | string; sex?: string; cc?: string; history?: string; exam?: string; vitals?: string; includePlos?: boolean };
+type Body = { age?: number | string; sex?: string; cc?: string; history?: string; exam?: string; vitals?: string; includePlos?: boolean; multiQuery?: boolean; selfCritique?: boolean };
+
+const DDX_CRITIQUE_SYSTEM = `You are a clinical auditor reviewing a draft differential diagnosis (DDx) JSON.
+
+Given (1) the clinical presentation, (2) the available source excerpts (textbook [n] and PLOS [P{n}]), and (3) the draft DDx JSON, identify problems.
+
+Output ONLY a JSON object of this shape:
+{
+  "missing_cannot_miss": ["dangerous diagnoses that should be in cannot_miss but aren't"],
+  "likelihood_errors": ["diagnoses with wrong/implausible likelihood"],
+  "unsupported_claims": ["claims that aren't backed by the cited excerpt"],
+  "missing_evidence": ["important excerpts the draft ignored"],
+  "investigation_problems": ["wrong, missing, or low-yield investigations"],
+  "citation_problems": ["wrong source attributed, missing citation_ids, etc."],
+  "needs_revision": true | false,
+  "overall_severity": "none" | "minor" | "moderate" | "major"
+}
+
+Empty arrays are fine. Set needs_revision=true if ANY missing_cannot_miss OR any major likelihood_errors OR any clinical_errors. If the draft is solid, return needs_revision=false. Be specific and actionable. No prose outside the JSON.`;
+
+const DDX_REVISION_SYSTEM = `You are revising your earlier DDx draft based on a clinical auditor's critique.
+
+You will receive (1) the clinical presentation, (2) source excerpts, (3) the draft JSON, (4) the auditor's critique. Output the REVISED full DDx JSON using the EXACT shape required:
+{"summary":"one line","missing_info":["..."],"cannot_miss":[{"diagnosis":"name","likelihood":"high|moderate|low","why_consider":"<25 words","distinguishing_features":["<12 words each"],"investigations":["<12 words each"],"citation_ids":[1,2],"plos_citation_ids":["P1"]}],"most_likely":[...],"other":[...]}
+
+Apply every fix in the critique: add missing cannot-miss diagnoses, correct likelihood, replace unsupported claims, swap weak investigations, fix citations. No prose, no markdown fences, lowercase keys only.`;
+
 
 function buildPresentation(b: Body): { display: string; queryHint: string } {
   const parts: string[] = [];
@@ -63,18 +90,24 @@ export async function POST(req: NextRequest) {
     let outcome: 'success' | 'error' | 'partial' = 'success';
     let outcomeMsg: string | undefined;
     try {
-      emit({ type: 'progress', stage: 'expanding', msg: 'Building clinical summary, expanding query…' });
-      // D12.2: BM25 leg gets just the chief complaint (highest-IDF clinical anchor).
-      // v1.4 P1b: PLOS fan-out — uses the chief complaint as the PLOS query
-      // (cleaner than the full queryHint which is heavy on boilerplate).
-      const includePlos = body.includePlos !== false;  // default true
+      emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Building clinical summary, expanding query…' });
+      const includePlos = body.includePlos !== false;
+      const useMultiQuery = body.multiQuery !== false;  // default true
       const plosQuery = (body.cc || queryHint || display).trim();
-      const [result, plosHits] = await Promise.all([
-        retrieve(queryHint || display, { topK: 8, minSimilarity: 0.4, bm25Query: (body.cc || '').trim() }),
+
+      const retrievalQuery = queryHint || display;
+      const retrievePromise = useMultiQuery
+        ? retrieveMultiQuery(retrievalQuery, { topK: 8, minSimilarity: 0.4, bm25Query: (body.cc || '').trim() })
+        : retrieve(retrievalQuery, { topK: 8, minSimilarity: 0.4, bm25Query: (body.cc || '').trim() }).then((r) => ({ hits: r.hits, variants: [retrievalQuery], perVariantCounts: [r.hits.length] }));
+      const [retrieveResult, plosHits] = await Promise.all([
+        retrievePromise,
         includePlos ? searchPlos(plosQuery, { rows: 5, yearsBack: 5 }) : Promise.resolve([] as PlosHit[]),
       ]);
-      const hits = result.hits;
-      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} textbook + ${plosHits.length} PLOS excerpts`, ms: Date.now() - t0 });
+      const hits = retrieveResult.hits;
+      if (useMultiQuery && retrieveResult.variants.length > 1) {
+        emit({ type: 'progress', stage: 'variants', msg: `Generated ${retrieveResult.variants.length - 1} query variants`, ms: Date.now() - t0 });
+      }
+      emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} textbook + ${plosHits.length} PLOS excerpts (fused from ${retrieveResult.variants.length} ${retrieveResult.variants.length === 1 ? 'query' : 'queries'})`, ms: Date.now() - t0 });
       if (hits.length === 0 && plosHits.length === 0) { emit({ type: 'error', message: 'no excerpts above threshold — presentation may be too vague' }); outcome = 'error'; outcomeMsg = 'no excerpts above threshold'; close(); return; }
 
       const citations = hits.map((h, i) => ({
@@ -95,15 +128,67 @@ export async function POST(req: NextRequest) {
       const plosBlock = formatPlosForPrompt(plosHits);
       const userMsg = `CLINICAL PRESENTATION:\n${display}\n\nMEDICAL EXCERPTS:\n${contextBlock || '(none)'}\n\n${plosBlock ? 'PLOS ONE ABSTRACTS:\n' + plosBlock + '\n\n' : ''}Output ONLY the JSON object now, starting with {. No prose, no markdown fences.`;
 
-      emit({ type: 'progress', stage: 'generating', msg: `Reasoning with ${DDX_MODEL}…`, ms: Date.now() - t0 });
-      const r = await tracedChat(traceId, 'ddx_generation', {
+      const useSelfCritique = body.selfCritique !== false;  // default true
+
+      emit({ type: 'progress', stage: useSelfCritique ? 'drafting' : 'generating', msg: `${useSelfCritique ? 'Drafting' : 'Reasoning'} with ${DDX_MODEL}…`, ms: Date.now() - t0 });
+      const draftRes = await tracedChat(traceId, 'ddx_draft', {
         model: DDX_MODEL,
         messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
         temperature: 0.2,
         max_tokens: 1500,
         ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
       });
-      const raw = r.choices?.[0]?.message?.content ?? '';
+      let raw = draftRes.choices?.[0]?.message?.content ?? '';
+
+      if (useSelfCritique) {
+        emit({ type: 'progress', stage: 'reviewing', msg: 'Auditing DDx for missing cannot-miss, likelihood errors, unsupported claims…', ms: Date.now() - t0 });
+        let critiqueJson: {
+          missing_cannot_miss?: string[]; likelihood_errors?: string[]; unsupported_claims?: string[];
+          missing_evidence?: string[]; investigation_problems?: string[]; citation_problems?: string[];
+          needs_revision?: boolean; overall_severity?: string;
+        } = { needs_revision: false };
+        try {
+          const critRes = await tracedChat(traceId, 'ddx_critique', {
+            model: DDX_MODEL,
+            messages: [
+              { role: 'system', content: DDX_CRITIQUE_SYSTEM },
+              { role: 'user', content: `Clinical presentation:\n${display}\n\nSource excerpts:\n${contextBlock || '(none)'}\n${plosHits.length ? '\nPLOS abstracts:\n' + plosHits.map((p, i) => `[P${i+1}] ${p.title} (${p.year})`).join('\n') + '\n' : ''}\nDraft DDx JSON:\n${raw}\n\nOutput the JSON critique now.` },
+            ],
+            temperature: 0.1,
+            max_tokens: 700,
+            ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+          });
+          let critRaw = critRes.choices?.[0]?.message?.content?.trim() || '{}';
+          if (critRaw.startsWith('```')) critRaw = critRaw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+          const a = critRaw.indexOf('{'); const b = critRaw.lastIndexOf('}');
+          if (a >= 0 && b > a) critRaw = critRaw.slice(a, b + 1);
+          critiqueJson = JSON.parse(critRaw);
+        } catch (e) { console.warn('[ddx critique] parse failed', (e as Error).message); }
+
+        const issueCount = (critiqueJson.missing_cannot_miss?.length || 0)
+          + (critiqueJson.likelihood_errors?.length || 0)
+          + (critiqueJson.unsupported_claims?.length || 0)
+          + (critiqueJson.missing_evidence?.length || 0)
+          + (critiqueJson.investigation_problems?.length || 0)
+          + (critiqueJson.citation_problems?.length || 0);
+        emit({ type: 'critique', severity: critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none'), issue_count: issueCount, details: critiqueJson });
+
+        if (critiqueJson.needs_revision && issueCount > 0) {
+          emit({ type: 'progress', stage: 'revising', msg: `Revising DDx to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
+          const revRes = await tracedChat(traceId, 'ddx_revision', {
+            model: DDX_MODEL,
+            messages: [
+              { role: 'system', content: DDX_REVISION_SYSTEM },
+              { role: 'user', content: `Clinical presentation:\n${display}\n\nSource excerpts:\n${contextBlock || '(none)'}\n\nEarlier draft JSON:\n${raw}\n\nAuditor critique:\n${JSON.stringify(critiqueJson, null, 2)}\n\nOutput the revised JSON now.` },
+            ],
+            temperature: 0.2,
+            max_tokens: 1500,
+            ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+          });
+          raw = revRes.choices?.[0]?.message?.content ?? raw;
+        }
+      }
+
       emit({ type: 'progress', stage: 'parsing', msg: 'Parsing differential…', ms: Date.now() - t0 });
 
       const parsed = parseLooseJson(raw) as {

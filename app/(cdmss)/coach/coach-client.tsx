@@ -60,6 +60,8 @@ function EvalChip({ ev }: { ev: NonNullable<Turn['evaluation']> }) {
 
 export default function CoachClient() {
   const [phase, setPhase] = useState<'start' | 'chat' | 'summary'>('start');
+  const [multiQuery, setMultiQuery] = useState(true);
+  const [selfCritique, setSelfCritique] = useState(true);
   const [startTab, setStartTab] = useState<'topic' | 'case'>('topic');
   const [topic, setTopic] = useState('');
   const [caseText, setCaseText] = useState('');

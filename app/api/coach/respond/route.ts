@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { searchPlos, formatPlosForPrompt } from '@/lib/cdmss/plos';
 import { sql } from '@/lib/cdmss/db';
 import { COACH_MODEL, buildCoachSystemPrompt, buildRevealSystemPrompt, isRevealIntent, parseLooseJson, loadSession, computeAccuracy, Turn } from '@/lib/cdmss/coach';
@@ -11,7 +12,7 @@ export const maxDuration = 120;
 const MAX_TURNS = 15; // total messages each side combined — hard cap
 
 export async function POST(req: NextRequest) {
-  let body: { session_id?: number; user_message?: string; force_answer?: boolean };
+  let body: { session_id?: number; user_message?: string; force_answer?: boolean; multiQuery?: boolean };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   const id = Number(body.session_id);
   const msg = (body.user_message || '').trim();
@@ -41,8 +42,12 @@ export async function POST(req: NextRequest) {
     let hits: Awaited<ReturnType<typeof retrieve>>['hits'] = [];
     let plosHitsR: Awaited<ReturnType<typeof searchPlos>> = [];
     try {
+      const useMultiQuery = body.multiQuery !== false;
+      const retrievePromise = useMultiQuery
+        ? retrieveMultiQuery(retrievalQuery, { topK: 6, minSimilarity: 0.3, bm25Query: sess.topic })
+        : retrieve(retrievalQuery, { topK: 6, minSimilarity: 0.3, bm25Query: sess.topic }).then((r) => ({ hits: r.hits }));
       const [r, p] = await Promise.all([
-        retrieve(retrievalQuery, { topK: 6, minSimilarity: 0.3, bm25Query: sess.topic }),
+        retrievePromise,
         searchPlos(sess.topic, { rows: 4, yearsBack: 5 }),
       ]);
       hits = r.hits;

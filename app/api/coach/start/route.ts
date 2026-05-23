@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { searchPlos, formatPlosForPrompt } from '@/lib/cdmss/plos';
 import { sql } from '@/lib/cdmss/db';
 import { COACH_MODEL, buildCoachSystemPrompt, parseLooseJson, Turn } from '@/lib/cdmss/coach';
@@ -8,7 +9,7 @@ import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-type Body = { mode?: 'topic' | 'case'; topic?: string; case_text?: string; difficulty?: 'novice' | 'intermediate' | 'advanced' };
+type Body = { mode?: 'topic' | 'case'; topic?: string; case_text?: string; difficulty?: 'novice' | 'intermediate' | 'advanced'; multiQuery?: boolean };
 
 export async function POST(req: NextRequest) {
   let body: Body;
@@ -21,10 +22,16 @@ export async function POST(req: NextRequest) {
   // v1.4 P1c: PLOS fan-out in parallel with retrieve()
   let result, plosHits;
   try {
-    [result, plosHits] = await Promise.all([
-      retrieve(subject, { topK: 6, minSimilarity: 0.3 }),
+    const useMultiQuery = body.multiQuery !== false;
+    const retrievePromise = useMultiQuery
+      ? retrieveMultiQuery(subject, { topK: 6, minSimilarity: 0.3 })
+      : retrieve(subject, { topK: 6, minSimilarity: 0.3 }).then((r) => ({ hits: r.hits, variants: [subject], perVariantCounts: [r.hits.length] }));
+    const [r, p] = await Promise.all([
+      retrievePromise,
       searchPlos(subject, { rows: 4, yearsBack: 5 }),
     ]);
+    result = { hits: r.hits };
+    plosHits = p;
   } catch (e) {
     return NextResponse.json({ error: 'retrieval failed', detail: String((e as Error).message) }, { status: 500 });
   }

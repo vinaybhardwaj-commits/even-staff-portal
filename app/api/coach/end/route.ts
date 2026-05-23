@@ -14,8 +14,25 @@ const SUMMARY_SYSTEM = `You are a teaching coach wrapping up a Socratic session.
 - "summary" reflects overall progress in one sentence.
 - No prose outside the JSON.`;
 
+const COACH_CRITIQUE_SYSTEM = `You are auditing a draft session-summary written by a Socratic teaching coach.
+
+You'll receive the transcript and the draft JSON. Identify problems and output ONLY this JSON:
+{
+  "ungrounded_concepts": ["a 'mastered' concept that the learner never actually demonstrated in the transcript"],
+  "missed_gaps": ["a gap visible in the transcript that the draft missed"],
+  "suggested_next_problems": ["if suggested_next is off-topic, too vague, or already-mastered"],
+  "summary_inaccurate": ["if the one-line summary misrepresents how the session actually went"],
+  "needs_revision": true | false
+}
+Empty arrays are fine. needs_revision=true if ANY array has entries. Be specific.`;
+
+const COACH_REVISION_SYSTEM = `You are revising your coach session summary based on an auditor critique.
+Output the FINAL JSON in exactly this shape (no prose):
+{"summary":"<one sentence>","concepts_mastered":["<bullet>"],"gaps":["<bullet>"],"suggested_next":"<one topic>"}
+Apply every fix: drop ungrounded concepts, add missed gaps, replace bad suggested_next, correct the summary.`;
+
 export async function POST(req: NextRequest) {
-  let body: { session_id?: number };
+  let body: { session_id?: number; selfCritique?: boolean };
   try { body = await req.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   const id = Number(body.session_id);
   if (!id) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
@@ -40,10 +57,12 @@ export async function POST(req: NextRequest) {
   const transcript = (sess.turns || []).map((t) => `${t.role.toUpperCase()}: ${t.content}`).join('\n\n');
   const accuracy = computeAccuracy(sess.turns || []);
 
-  const traceId = await startTrace('coach_end', { session_id: id, topic: sess.topic, difficulty: sess.difficulty, accuracy });
+  const useSelfCritique = body.selfCritique !== false;  // default true
+  const traceId = await startTrace('coach_end', { session_id: id, topic: sess.topic, difficulty: sess.difficulty, accuracy, selfCritique: useSelfCritique });
   let raw = '';
+  let critiqueJson: { ungrounded_concepts?: string[]; missed_gaps?: string[]; suggested_next_problems?: string[]; summary_inaccurate?: string[]; needs_revision?: boolean } | null = null;
   try {
-    const r = await tracedChat(traceId, 'summary', {
+    const draftReq = await tracedChat(traceId, 'summary_draft', {
       model: COACH_MODEL,
       messages: [
         { role: 'system', content: SUMMARY_SYSTEM },
@@ -53,7 +72,45 @@ export async function POST(req: NextRequest) {
       max_tokens: 400,
       ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
     });
-    raw = r.choices?.[0]?.message?.content ?? '';
+    raw = draftReq.choices?.[0]?.message?.content ?? '';
+
+    if (useSelfCritique && raw.trim()) {
+      try {
+        const critReq = await tracedChat(traceId, 'summary_critique', {
+          model: COACH_MODEL,
+          messages: [
+            { role: 'system', content: COACH_CRITIQUE_SYSTEM },
+            { role: 'user', content: `Transcript:\n${transcript}\n\nDraft summary JSON:\n${raw}\n\nOutput the JSON critique now.` },
+          ],
+          temperature: 0.1,
+          max_tokens: 400,
+          ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+        });
+        let critRaw = critReq.choices?.[0]?.message?.content?.trim() || '{}';
+        if (critRaw.startsWith('```')) critRaw = critRaw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+        const a = critRaw.indexOf('{'); const b = critRaw.lastIndexOf('}');
+        if (a >= 0 && b > a) critRaw = critRaw.slice(a, b + 1);
+        critiqueJson = JSON.parse(critRaw);
+
+        const issueCount = (critiqueJson?.ungrounded_concepts?.length || 0)
+          + (critiqueJson?.missed_gaps?.length || 0)
+          + (critiqueJson?.suggested_next_problems?.length || 0)
+          + (critiqueJson?.summary_inaccurate?.length || 0);
+        if (critiqueJson?.needs_revision && issueCount > 0) {
+          const revReq = await tracedChat(traceId, 'summary_revision', {
+            model: COACH_MODEL,
+            messages: [
+              { role: 'system', content: COACH_REVISION_SYSTEM },
+              { role: 'user', content: `Transcript:\n${transcript}\n\nDraft JSON:\n${raw}\n\nAuditor critique:\n${JSON.stringify(critiqueJson, null, 2)}\n\nOutput the revised JSON now.` },
+            ],
+            temperature: 0.2,
+            max_tokens: 400,
+            ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
+          });
+          raw = revReq.choices?.[0]?.message?.content ?? raw;
+        }
+      } catch (e) { console.warn('[coach end critique] failed', (e as Error).message); }
+    }
     let t = raw.trim();
     if (t.startsWith('```')) t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
     const a = t.indexOf('{'); const b = t.lastIndexOf('}');
@@ -74,6 +131,7 @@ export async function POST(req: NextRequest) {
       summary: parsed.summary || '',
       concepts_mastered: Array.isArray(parsed.concepts_mastered) ? parsed.concepts_mastered : [],
       gaps: Array.isArray(parsed.gaps) ? parsed.gaps : [],
+      critique: critiqueJson || undefined,
       sources_recap: {
         textbook: recapHits.map((h, i) => ({
           n: i + 1, id: h.id, book: h.book, chapter: h.chapter,

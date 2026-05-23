@@ -140,6 +140,9 @@ function DxCard({ dx, idx, danger, onCite, onPlosCite }: { dx: Dx; idx: number; 
 }
 
 export default function DdxClient() {
+  const [multiQuery, setMultiQuery] = useState(true);
+  const [selfCritique, setSelfCritique] = useState(true);
+  const [critique, setCritique] = useState<{ severity: string; issue_count: number; details: Record<string, unknown> } | null>(null);
   const [age, setAge] = useState('');
   const [sex, setSex] = useState('?');
   const [cc, setCc] = useState('');
@@ -185,8 +188,7 @@ export default function DdxClient() {
           cc: cc.trim(),
           history: history.trim() || undefined,
           exam: exam.trim() || undefined,
-          vitals: vitals.trim() || undefined,
-        }),
+          vitals: vitals.trim() || undefined, multiQuery, selfCritique, includePlos: true }),
       });
       if (!r.ok) {
         const t = await r.text();
@@ -197,6 +199,7 @@ export default function DdxClient() {
       await consumeNdjson(r, (ev) => {
         if (ev.type === 'progress') pushTrace(ev.stage, ev.msg, ev.ms);
         else if (ev.type === 'sources') { /* citations come with result */ }
+        else if ((ev as { type: string }).type === 'critique') { const c = ev as unknown as { severity: string; issue_count: number; details: Record<string, unknown> }; setCritique({ severity: c.severity, issue_count: c.issue_count, details: c.details }); }
         else if (ev.type === 'result') { dRef.current = ev.data as DdxResponse; setData(dRef.current); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
