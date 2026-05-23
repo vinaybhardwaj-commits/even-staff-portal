@@ -54,10 +54,20 @@ export async function POST(req: NextRequest) {
     const reindexableRows = await sql`SELECT COUNT(*)::int AS n FROM mksap_chunks WHERE embedding_v2 IS NULL AND text IS NOT NULL AND length(text) > 0 AND (source_quality_weight IS NULL OR source_quality_weight >= 0)` as { n: number }[];
     const stillReindexable = reindexableRows[0]?.n ?? 0;
     if (stillReindexable > 0) return NextResponse.json({ error: `reindex incomplete: ${stillReindexable} reindexable rows remain`, populated, missing, stillReindexable }, { status: 409 });
-    const lists = Math.max(10, Math.min(500, Math.round(Math.sqrt(populated))));
-    try { await (sql as unknown as (q: string) => Promise<unknown>)(`CREATE INDEX IF NOT EXISTS idx_mksap_chunks_embedding_v2 ON mksap_chunks USING ivfflat (embedding_v2 vector_cosine_ops) WITH (lists = ${lists})`); }
-    catch (e: unknown) { return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
-    return NextResponse.json({ ok: true, populated, lists });
+    // IVFFlat build memory: ~ (sample_count * dim * 4 bytes) for the K-means phase.
+    // 194k vectors at 1024-dim needs ~130 MB; default Neon maintenance_work_mem is 67 MB.
+    // Use a smaller lists value (100 instead of sqrt(rows)=441) to also cut memory.
+    // Combined with the per-session SET, this should comfortably fit.
+    const lists = Math.max(10, Math.min(200, Math.round(Math.sqrt(populated) / 4)));
+    try {
+      // Neon's HTTP driver runs each tagged-template in its own transaction, so SET must
+      // be combined with CREATE INDEX in a single multi-statement query string.
+      const ddl = `SET maintenance_work_mem = '256MB'; CREATE INDEX IF NOT EXISTS idx_mksap_chunks_embedding_v2 ON mksap_chunks USING ivfflat (embedding_v2 vector_cosine_ops) WITH (lists = ${lists})`;
+      await (sql as unknown as (q: string) => Promise<unknown>)(ddl);
+    } catch (e: unknown) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e), lists, hint: 'Try lowering lists further or splitting SET + CREATE into 2 calls if Neon HTTP rejects multi-statement.' }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, populated, lists, maintenance_work_mem: '256MB' });
   }
 
   // action=status  → just counts
