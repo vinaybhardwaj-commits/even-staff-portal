@@ -59,15 +59,22 @@ export async function POST(req: NextRequest) {
     // Use a smaller lists value (100 instead of sqrt(rows)=441) to also cut memory.
     // Combined with the per-session SET, this should comfortably fit.
     const lists = Math.max(10, Math.min(200, Math.round(Math.sqrt(populated) / 4)));
+    // Neon HTTP driver: sql.transaction([...]) batches prepared queries over a
+    // single connection so SET LOCAL persists for the CREATE INDEX. Use sql.unsafe()
+    // for the CREATE INDEX so the lists option (which Postgres parses syntactically,
+    // not as a bind param) is inlined as a literal.
     try {
-      // Neon's HTTP driver runs each tagged-template in its own transaction, so SET must
-      // be combined with CREATE INDEX in a single multi-statement query string.
-      const ddl = `SET maintenance_work_mem = '256MB'; CREATE INDEX IF NOT EXISTS idx_mksap_chunks_embedding_v2 ON mksap_chunks USING ivfflat (embedding_v2 vector_cosine_ops) WITH (lists = ${lists})`;
-      await (sql as unknown as (q: string) => Promise<unknown>)(ddl);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sqlAny = sql as any;
+      const ddl = `CREATE INDEX IF NOT EXISTS idx_mksap_chunks_embedding_v2 ON mksap_chunks USING ivfflat (embedding_v2 vector_cosine_ops) WITH (lists = ${lists})`;
+      await sqlAny.transaction([
+        sqlAny.unsafe ? sqlAny.unsafe("SET LOCAL maintenance_work_mem = '256MB'") : sqlAny`SET LOCAL maintenance_work_mem = '256MB'`,
+        sqlAny.unsafe ? sqlAny.unsafe(ddl) : sqlAny(ddl),
+      ]);
     } catch (e: unknown) {
-      return NextResponse.json({ error: e instanceof Error ? e.message : String(e), lists, hint: 'Try lowering lists further or splitting SET + CREATE into 2 calls if Neon HTTP rejects multi-statement.' }, { status: 500 });
+      return NextResponse.json({ error: e instanceof Error ? e.message : String(e), lists, hint: 'transaction+unsafe failed — try lowering lists or skip index' }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, populated, lists, maintenance_work_mem: '256MB' });
+    return NextResponse.json({ ok: true, populated, lists, maintenance_work_mem: '256MB', driver: 'http/transaction' });
   }
 
   // action=status  → just counts
