@@ -6,6 +6,7 @@ import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
 
 type Citation = { n: number; id: number; book: string; chapter: string | null; page_start: number | null; page_end: number | null; item_number: string | null; chunk_type: string; similarity: number; preview: string; };
+type PlosCitation = { n: number; kind: 'plos'; doi: string; title: string; authors: string[]; year: number; url: string; full_url: string; preview: string; };
 
 const EXAMPLES = [
   'First-line management of HFrEF NYHA III?',
@@ -62,6 +63,8 @@ export default function AskClient() {
   const recRef = useRef<SR | null>(null);
   const sessionId = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), []);
   const sourcesRef = useRef<HTMLDivElement | null>(null);
+  const [plosCitations, setPlosCitations] = useState<PlosCitation[]>([]);
+  const [includePlos, setIncludePlos] = useState(true);
 
   function toggleVoice() {
     if (voiceActive) { recRef.current?.stop(); return; }
@@ -94,18 +97,24 @@ export default function AskClient() {
   }
 
   async function submit(q: string) {
-    setQuestion(q); setAnswer(''); setCitations([]); setError(null); setExpanded({}); setHighlighted(null);
+    setQuestion(q); setAnswer(''); setCitations([]); setPlosCitations([]); setError(null); setExpanded({}); setHighlighted(null);
     setTrace([]); setTotalMs(undefined); setLoading(true);
     abortRef.current?.abort();
     const ctrl = new AbortController(); abortRef.current = ctrl;
     const t0 = Date.now();
     let fullAnswer = ''; let citationsLocal: Citation[] = [];
     try {
-      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q }), signal: ctrl.signal });
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos }), signal: ctrl.signal });
       if (!r.ok) { setError(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`); setLoading(false); return; }
       await consumeNdjson(r, (ev) => {
         if (ev.type === 'progress') pushTrace(ev.stage, ev.msg, ev.ms);
-        else if (ev.type === 'sources') { citationsLocal = ev.items as Citation[]; setCitations(citationsLocal); }
+        else if (ev.type === 'sources') {
+          citationsLocal = ev.items as Citation[];
+          setCitations(citationsLocal);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p = (ev as any).plos as PlosCitation[] | undefined;
+          if (p) setPlosCitations(p);
+        }
         else if (ev.type === 'token') { fullAnswer += ev.content; setAnswer(fullAnswer); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
@@ -146,10 +155,22 @@ export default function AskClient() {
         </div>
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {EXAMPLES.map((ex) => (
           <button key={ex} onClick={() => submit(ex)} disabled={loading} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand disabled:opacity-40">{ex}</button>
         ))}
+        <span className="text-slate-300">|</span>
+        <span className="text-[11px] uppercase tracking-wider text-slate-400">Sources</span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-brand bg-brand-faint px-2.5 py-1 text-[11px] font-medium text-brand">MKSAP / StatPearls / UpToDate</span>
+        <button
+          type="button"
+          onClick={() => setIncludePlos((v) => !v)}
+          disabled={loading}
+          aria-pressed={includePlos}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${includePlos ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-400'}`}
+        >
+          {includePlos ? '✓ ' : ''}PLOS ONE (last 5y, Medicine)
+        </button>
       </div>
 
       {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} /></div>}
@@ -189,6 +210,43 @@ export default function AskClient() {
                     {isOpen ? <ChevronUp className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />}
                   </button>
                   {isOpen && <div className="border-t border-slate-100 px-3 py-2 text-[13px] leading-relaxed text-slate-700">{c.preview}{c.preview.length >= 600 && <span className="text-slate-400">…</span>}</div>}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      )}
+
+      {plosCitations.length > 0 && (
+        <section className="mt-6">
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            <BookOpen className="h-3.5 w-3.5" /> PLOS ONE primary research ({plosCitations.length})
+          </h2>
+          <ol className="mt-3 space-y-2">
+            {plosCitations.map((p) => {
+              const isOpen = !!expanded[`P${p.n}` as unknown as number];
+              return (
+                <li key={`P${p.n}`} className="rounded-lg border border-amber-200 bg-amber-50/30 text-sm shadow-sm">
+                  <button
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    onClick={() => setExpanded((prev) => ({ ...prev, [`P${p.n}` as any]: !isOpen }))}
+                    className="flex w-full items-start justify-between gap-2 px-3 py-2 text-left hover:bg-amber-50/60"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800">[P{p.n}]</span>
+                        <span className="truncate font-medium text-slate-800">{p.title}</span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-slate-500">
+                        {p.authors.length > 0 && <span>{p.authors.join(', ')}{p.authors.length === 3 ? ' et al.' : ''} · </span>}
+                        <span>PLOS ONE {p.year}</span>
+                        <span className="mx-1">·</span>
+                        <a href={p.full_url} target="_blank" rel="noopener noreferrer" className="text-amber-700 hover:underline" onClick={(e) => e.stopPropagation()}>open article ↗</a>
+                      </div>
+                    </div>
+                    {isOpen ? <ChevronUp className="h-4 w-4 shrink-0 text-amber-500" /> : <ChevronDown className="h-4 w-4 shrink-0 text-amber-500" />}
+                  </button>
+                  {isOpen && <div className="border-t border-amber-200 px-3 py-2 text-[13px] leading-relaxed text-slate-700">{p.preview}{p.preview.length >= 600 && <span className="text-slate-400">…</span>}</div>}
                 </li>
               );
             })}
