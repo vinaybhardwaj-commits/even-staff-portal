@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
 
   for (const row of rows) {
     try {
-      const r = await llm.embeddings.create({ model: EMBED_MODEL_V2, input: row.text.slice(0, 8192) });
+      const r = await llm.embeddings.create({ model: EMBED_MODEL_V2, input: row.text.slice(0, 1500) });
       const vec = r.data[0]?.embedding;
       if (!vec || vec.length !== 1024) throw new Error(`bad shape: ${vec?.length}`);
       const vlit = '[' + vec.map((x) => x.toFixed(7)).join(',') + ']';
