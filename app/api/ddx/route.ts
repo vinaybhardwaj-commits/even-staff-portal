@@ -90,10 +90,10 @@ export async function POST(req: NextRequest) {
     let outcome: 'success' | 'error' | 'partial' = 'success';
     let outcomeMsg: string | undefined;
     try {
-      emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Building clinical summary, expanding query…' });
       const includePlos = body.includePlos !== false;
       const useMultiQuery = body.multiQuery !== false;  // default true
       const plosQuery = (body.cc || queryHint || display).trim();
+      emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Building clinical summary, expanding query…' });
 
       const retrievalQuery = queryHint || display;
       const retrievePromise = useMultiQuery
