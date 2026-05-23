@@ -52,7 +52,7 @@ You will receive:
 Rewrite the draft to fix every issue. Keep what's correct, correct what's wrong, add what's missing. Cite every clinical claim using the same [n] / [P{n}] format. Do not include any meta-commentary about the revision process — output the final clean answer the physician will read.`;
 
 export async function POST(req: NextRequest) {
-  let body: { question?: string; bookFilter?: string; includePlos?: boolean; multiQuery?: boolean; selfCritique?: boolean };
+  let body: { question?: string; bookFilter?: string; includePlos?: boolean; multiQuery?: boolean; selfCritique?: boolean; useReranker?: boolean; useSourceWeights?: boolean; useEmbeddingV2?: boolean };
   try { body = await req.json(); } catch {
     return new Response(JSON.stringify({ error: 'invalid json' }), { status: 400 });
   }
@@ -62,10 +62,13 @@ export async function POST(req: NextRequest) {
   }
   const useMultiQuery = body.multiQuery !== false;   // default true
   const useSelfCritique = body.selfCritique !== false;  // default true
+  const useReranker = body.useReranker !== false;     // v1.6 default true
+  const useSourceWeights = body.useSourceWeights !== false;  // v1.6 default true
+  const useEmbeddingV2 = body.useEmbeddingV2;          // v1.6 undefined → env default
 
   const { stream, emit, close } = makeNdjsonStream();
   const t0 = Date.now();
-  const traceId = await startTrace('ask', { question, bookFilter: body.bookFilter, multiQuery: useMultiQuery, selfCritique: useSelfCritique });
+  const traceId = await startTrace('ask', { question, bookFilter: body.bookFilter, multiQuery: useMultiQuery, selfCritique: useSelfCritique, reranker: useReranker, sourceWeights: useSourceWeights, embeddingV2: useEmbeddingV2 });
 
   (async () => {
     let outcome: 'success' | 'error' | 'partial' = 'success';
@@ -75,9 +78,16 @@ export async function POST(req: NextRequest) {
       emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Rewriting query for semantic search…' });
       const includePlos = body.includePlos !== false;
 
+      const retrieveOpts = {
+        bookFilter: body.bookFilter,
+        topK: 8,
+        useReranker,
+        useSourceWeights,
+        ...(useEmbeddingV2 !== undefined ? { useEmbeddingV2 } : {}),
+      };
       const retrievalPromise = useMultiQuery
-        ? retrieveMultiQuery(question, { bookFilter: body.bookFilter, topK: 8 })
-        : retrieve(question, { bookFilter: body.bookFilter, topK: 8 }).then((r) => ({ hits: r.hits, variants: [question], perVariantCounts: [r.hits.length] }));
+        ? retrieveMultiQuery(question, retrieveOpts)
+        : retrieve(question, retrieveOpts).then((r) => ({ hits: r.hits, variants: [question], perVariantCounts: [r.hits.length] }));
       const plosPromise: Promise<PlosHit[]> = includePlos ? searchPlos(question, { rows: 5, yearsBack: 5 }) : Promise.resolve([]);
 
       const [retrieveResult, plosHits] = await Promise.all([retrievalPromise, plosPromise]);
@@ -92,6 +102,8 @@ export async function POST(req: NextRequest) {
         });
       }
       emit({ type: 'progress', stage: 'retrieving', msg: `Retrieved ${hits.length} textbook + ${plosHits.length} PLOS ONE excerpts (fused from ${retrieveResult.variants.length} ${retrieveResult.variants.length === 1 ? 'query' : 'queries'})`, ms: Date.now() - t0 });
+      if (useReranker) emit({ type: 'progress', stage: 'reranking', msg: `Reranked by cross-encoder + ${useSourceWeights ? 'source-quality fusion' : 'no source weights'}`, ms: Date.now() - t0 });
+      else if (useSourceWeights) emit({ type: 'progress', stage: 'fusing', msg: 'Applied source-quality weights', ms: Date.now() - t0 });
 
       if (hits.length === 0 && plosHits.length === 0) {
         emit({ type: 'error', message: 'no relevant excerpts above similarity threshold' });

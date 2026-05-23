@@ -67,6 +67,8 @@ export default function AskClient() {
   const [includePlos, setIncludePlos] = useState(true);
   const [multiQuery, setMultiQuery] = useState(true);
   const [selfCritique, setSelfCritique] = useState(true);
+  const [useReranker, setUseReranker] = useState(true);
+  const [useSourceWeights, setUseSourceWeights] = useState(true);
   const [critique, setCritique] = useState<{ severity: string; issue_count: number; details: Record<string, unknown> } | null>(null);
 
   function toggleVoice() {
@@ -107,7 +109,7 @@ export default function AskClient() {
     const t0 = Date.now();
     let fullAnswer = ''; let citationsLocal: Citation[] = [];
     try {
-      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos, multiQuery, selfCritique }), signal: ctrl.signal });
+      const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos, multiQuery, selfCritique, useReranker, useSourceWeights }), signal: ctrl.signal });
       if (!r.ok) { setError(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`); setLoading(false); return; }
       await consumeNdjson(r, (ev) => {
         if (ev.type === 'progress') pushTrace(ev.stage, ev.msg, ev.ms);
@@ -197,6 +199,24 @@ export default function AskClient() {
           className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${selfCritique ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-400'}`}
         >
           {selfCritique ? '✓ ' : ''}Self-critique
+        </button>
+        <button
+          type="button"
+          onClick={() => setUseReranker((v) => !v)}
+          aria-pressed={useReranker}
+          title="Cross-encoder rerank pool→top-K (better top results)"
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${useReranker ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-400'}`}
+        >
+          {useReranker ? '✓ ' : ''}Reranker
+        </button>
+        <button
+          type="button"
+          onClick={() => setUseSourceWeights((v) => !v)}
+          aria-pressed={useSourceWeights}
+          title="Weight chunks by book tier + chunk type + length"
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${useSourceWeights ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-500 hover:border-rose-400'}`}
+        >
+          {useSourceWeights ? '✓ ' : ''}Source weights
         </button>
       </div>
 
