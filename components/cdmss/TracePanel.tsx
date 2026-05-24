@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckCircle2, Loader2, ChevronDown, ChevronUp, AlertTriangle, Copy, Check, ExternalLink } from 'lucide-react';
 import { formatDuration } from '@/lib/cdmss/format-duration';
 import { STAGE_EXPLAINERS } from '@/lib/cdmss/stage-explainers';
@@ -26,6 +26,62 @@ export type TraceEvent = {
   ts: number;
 };
 
+
+// v2.0.2 — stage-anchored progress milestones for /drugs surfaces.
+// The time-only bar from v2.0.1 still felt wrong on /drugs because the medians
+// from /api/ask/stage-medians are calibrated for /ask (~30s) so on a 7-8min
+// /drugs query the bar would either pin at 95% almost immediately (without
+// re-scaling) or creep up linearly out of sync with what the pipeline is
+// actually doing (with re-scaling). Milestones lock the bar to verified
+// pipeline progress, with time-based interpolation only WITHIN a band.
+type Milestone = { match: RegExp; pct: number };
+
+// Order matches the /api/drugs/lookup emit sequence. The bar jumps when a
+// matching message arrives and time-interpolates toward the next milestone
+// while waiting. PubChem step is optional — skipped if PubChem fails to resolve.
+const DRUGS_LOOKUP_MILESTONES: Milestone[] = [
+  { match: /^Normalizing/i,                       pct: 3  },
+  { match: /^Resolved to/i,                       pct: 6  },
+  { match: /pharmacology excerpts/i,              pct: 10 },
+  { match: /^PubChem CID/i,                       pct: 13 },
+  { match: /^Phase 1\/3.*\(.*\)/i,             pct: 15 },
+  { match: /^Phase 1\/3.*complete/i,             pct: 30 },
+  { match: /^Phase 2\/3.*\(.*\)/i,             pct: 33 },
+  { match: /pharmacology audit/i,                 pct: 50 },
+  { match: /pharmacology revision/i,              pct: 58 },
+  { match: /^Phase 2\/3.*complete/i,             pct: 70 },
+  { match: /^Phase 3\/3.*\(.*\)/i,             pct: 73 },
+  { match: /^Phase 3\/3.*complete/i,             pct: 95 },
+];
+
+const DRUGS_INTERACTIONS_MILESTONES: Milestone[] = [
+  { match: /^Normalizing/i,           pct: 5  },
+  { match: /^Checking:/i,             pct: 10 },
+  { match: /^PubChem flagged/i,       pct: 20 },
+  { match: /^Retrieved \d+ excerpts/i, pct: 35 },
+  { match: /^Analyzing pairs/i,       pct: 45 },
+  { match: /^Deduplicating/i,         pct: 90 },
+];
+
+function milestoneFor(events: TraceEvent[], table: Milestone[]): { current: number; next: number; sinceMs: number } {
+  let currentIdx = -1;
+  let sinceMs = Date.now();
+  // Walk events in order; remember the highest milestone hit and when it landed.
+  for (const e of events) {
+    for (let i = 0; i < table.length; i++) {
+      if (table[i].match.test(e.msg)) {
+        if (i > currentIdx) {
+          currentIdx = i;
+          sinceMs = e.ts;
+        }
+      }
+    }
+  }
+  const currentPct = currentIdx >= 0 ? table[currentIdx].pct : 2;
+  const nextPct = currentIdx + 1 < table.length ? table[currentIdx + 1].pct : 95;
+  return { current: currentPct, next: nextPct, sinceMs };
+}
+
 const STAGE_LABEL: Record<string, string> = {
   expanding: 'Query expansion',
   variants: 'Variants generated',
@@ -42,7 +98,7 @@ const STAGE_LABEL: Record<string, string> = {
   done: 'Done',
 };
 
-export default function TracePanel({ events, totalMs, traceId }: { events: TraceEvent[]; totalMs?: number; traceId?: string | null }) {
+export default function TracePanel({ events, totalMs, traceId, surface }: { events: TraceEvent[]; totalMs?: number; traceId?: string | null; surface?: 'ask' | 'ddx' | 'coach' | 'drugs' | 'drugs-interactions' }) {
   // ALL HOOKS FIRST — no early returns above this line
   const [open, setOpen] = useState(true);
   const [now, setNow] = useState(() => Date.now());
@@ -94,23 +150,42 @@ export default function TracePanel({ events, totalMs, traceId }: { events: Trace
       </button>
       {open && !isComplete && !hasError && (() => {
         const elapsed = now - t0;
-        // v2.0.1: when elapsed exceeds the expected p50, re-scale the denominator
-        // so the bar never pins at 100% before the 'done' event arrives. The medians
-        // come from /api/ask/stage-medians which is calibrated for /ask (~30s typical),
-        // so on slower surfaces like /drugs (~5min typical) the bar would otherwise
-        // hit 100% in the first 30s and stay there for the rest of the query.
-        const overdue = elapsed > medians.total_p50;
-        const effectiveTotal = overdue ? Math.max(medians.total_p50, elapsed * 1.15) : medians.total_p50;
-        const eta = Math.max(0, effectiveTotal - elapsed);
-        const pct = Math.min(95, Math.max(2, (elapsed / effectiveTotal) * 100));
+        // v2.0.2 — stage-anchored progress on /drugs surfaces; time-only fallback on /ask /ddx /coach.
+        // For /drugs the bar tracks verified pipeline milestones (Phase 1/3 complete, audit, revision, etc).
+        // Within a milestone band we time-interpolate toward the next milestone so the bar still moves
+        // while qwen2.5:14b is grinding — but it never overshoots what the server has confirmed done.
+        const milestoneTable =
+          surface === 'drugs' ? DRUGS_LOOKUP_MILESTONES :
+          surface === 'drugs-interactions' ? DRUGS_INTERACTIONS_MILESTONES :
+          null;
+
+        let pct: number;
+        let etaLabel: React.ReactNode;
+        if (milestoneTable) {
+          const ms = milestoneFor(events, milestoneTable);
+          const inBandMs = Math.max(0, now - ms.sinceMs);
+          // Assume each band takes ~60s when we have no historical data; cap interpolation at 90% of the band.
+          const ASSUMED_BAND_MS = 60_000;
+          const bandProgress = Math.min(0.9, inBandMs / ASSUMED_BAND_MS);
+          pct = Math.min(95, Math.max(2, ms.current + (ms.next - ms.current) * bandProgress));
+          // /drugs has no reliable ETA — surface what's actually happening instead of fake remaining-time.
+          etaLabel = <span className="text-slate-500">{STAGE_LABEL[last.stage] || last.stage}</span>;
+        } else {
+          // Pre-v2.0.2 behaviour for /ask /ddx /coach where medians ARE calibrated.
+          const overdue = elapsed > medians.total_p50;
+          const effectiveTotal = overdue ? Math.max(medians.total_p50, elapsed * 1.15) : medians.total_p50;
+          const eta = Math.max(0, effectiveTotal - elapsed);
+          pct = Math.min(95, Math.max(2, (elapsed / effectiveTotal) * 100));
+          etaLabel = overdue
+            ? <span className="text-amber-700">Longer than usual — still working</span>
+            : <span>~{formatDuration(eta)} remaining</span>;
+        }
         const explainer = STAGE_EXPLAINERS[last.stage];
         return (
           <div className="border-t border-slate-200 bg-white/40 px-3 py-2">
             <div className="mb-1 flex items-center justify-between text-[10.5px] text-slate-500">
               <span>{formatDuration(elapsed)} elapsed</span>
-              {overdue
-                ? <span className="text-amber-700">Longer than usual — still working</span>
-                : <span>~{formatDuration(eta)} remaining</span>}
+              {etaLabel}
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded bg-slate-200">
               <div className="h-full bg-brand transition-all" style={{ width: `${pct}%` }} />

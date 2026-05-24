@@ -319,7 +319,7 @@ function LookupPanel() {
         </button>
       </div>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} surface="drugs" /></div>}
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
 
       {/* v2.0.1: critique banner — shows when the pharmacology audit pass flagged + fixed issues */}
@@ -675,7 +675,7 @@ function InteractionsPanel() {
         </div>
       </form>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} surface="drugs-interactions" /></div>}
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
 
       {loading && (
