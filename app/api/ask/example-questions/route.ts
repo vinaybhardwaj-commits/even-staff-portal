@@ -11,10 +11,12 @@ export const runtime = 'nodejs';
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const n = Math.min(8, Math.max(1, parseInt(url.searchParams.get('n') || '4', 10)));
+  const rawSurface = (url.searchParams.get('surface') || 'ask').toLowerCase();
+  const surface = (['ask', 'ddx', 'coach'].includes(rawSurface) ? rawSurface : 'ask') as 'ask' | 'ddx' | 'coach';
 
   try {
     const specialties = await sql`
-      SELECT DISTINCT specialty FROM example_questions WHERE active = TRUE
+      SELECT DISTINCT specialty FROM example_questions WHERE active = TRUE AND surface = ${surface}
     ` as { specialty: string }[];
     if (specialties.length === 0) {
       // Fallback to hardcoded set if table empty (e.g. fresh deploy pre-seed)
@@ -32,7 +34,7 @@ export async function GET(req: NextRequest) {
     const picked = await Promise.all(shuffled.map(async ({ specialty }) => {
       const rows = await sql`
         SELECT id, question, specialty FROM example_questions
-        WHERE active = TRUE AND specialty = ${specialty}
+        WHERE active = TRUE AND specialty = ${specialty} AND surface = ${surface}
         ORDER BY random() LIMIT 1
       ` as { id: number; question: string; specialty: string }[];
       return rows[0] || null;
