@@ -51,6 +51,9 @@ export default function HelpCard({ storageKey, title, bullets, defaultOpen = tru
         </button>
       </button>
       {open && (
+        {body && (
+          <p className="px-9 pb-3 text-sky-900/90 leading-snug">{body}</p>
+        )}
         <ul className="ml-9 list-disc space-y-1 pb-3 pr-4 text-sky-900">
           {bullets.map((b, i) => <li key={i}>{b}</li>)}
         </ul>

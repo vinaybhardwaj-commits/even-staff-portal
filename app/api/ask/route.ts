@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
 import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { TEXT_MODEL, CRITIQUE_MODEL } from '@/lib/cdmss/llm';
+import { modelLabel } from '@/lib/cdmss/model-labels';
 import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat, logStreamComplete, logEvent, setTraceQuestionPreview, setTraceSeverity, setTraceModelSummary, setTraceFinalAnswer } from '@/lib/cdmss/trace';
@@ -192,7 +193,7 @@ export async function POST(req: NextRequest) {
       // the revision so the UI swaps the answer.
       let draftAnswer = '';
       if (useSelfCritique) {
-        emit({ type: 'progress', stage: 'drafting', msg: `Drafting answer with ${TEXT_MODEL}… (audit + revise will use ${CRITIQUE_MODEL} after)`, ms: Date.now() - t0 });
+        emit({ type: 'progress', stage: 'drafting', msg: `Drafting answer with ${modelLabel(TEXT_MODEL)}… (audit + revise will use ${modelLabel(CRITIQUE_MODEL)} after)`, ms: Date.now() - t0 });
         const draftStart = Date.now();
         const draftRes = await tracedChat(traceId, 'draft', {
           model: TEXT_MODEL,
@@ -280,7 +281,7 @@ export async function POST(req: NextRequest) {
           // Tell UI: the draft we already streamed is superseded; clear that buffer
           // and accept the NEW tokens we're about to stream as the canonical answer.
           emit({ type: 'draft_superseded', reason: `${issueCount} issue${issueCount !== 1 ? 's' : ''} found by audit` });
-          emit({ type: 'progress', stage: 'revising', msg: `Revising with ${CRITIQUE_MODEL} to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
+          emit({ type: 'progress', stage: 'revising', msg: `Revising with ${modelLabel(CRITIQUE_MODEL)} to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
           const revStart = Date.now();
           const revRes = await tracedChat(traceId, 'revision', {
             model: CRITIQUE_MODEL,  // 7b for the revise pass too
@@ -312,7 +313,7 @@ export async function POST(req: NextRequest) {
         // else: draft already streamed to UI during Phase 2; nothing to do.
       } else {
         // Self-critique disabled — original single-pass streaming behavior
-        emit({ type: 'progress', stage: 'generating', msg: `Generating answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
+        emit({ type: 'progress', stage: 'generating', msg: `Generating answer with ${modelLabel(TEXT_MODEL)}…`, ms: Date.now() - t0 });
         const llmStart = Date.now();
         const completion = await tracedChat(traceId, 'answer', {
           model: TEXT_MODEL,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import { Mic, MicOff, Send, ChevronDown, ChevronUp, BookOpen, Loader2 } from 'lucide-react';
 import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
@@ -9,7 +9,8 @@ import { MarkdownAnswer } from '@/components/cdmss/MarkdownAnswer';
 type Citation = { n: number; id: number; book: string; chapter: string | null; page_start: number | null; page_end: number | null; item_number: string | null; chunk_type: string; similarity: number; preview: string; };
 type PlosCitation = { n: number; kind: 'plos'; doi: string; title: string; authors: string[]; year: number; url: string; full_url: string; preview: string; };
 
-const EXAMPLES = [
+// v1.7 Sprint G: chips come from /api/ask/example-questions (rotated per-load + Shuffle)
+const DEFAULT_EXAMPLES = [
   'First-line management of HFrEF NYHA III?',
   'Distinguishing IBS from IBD in a 28y with chronic diarrhea',
   'Workup for hyponatremia, serum osmolality 268',
@@ -61,6 +62,18 @@ export default function AskClient() {
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [totalMs, setTotalMs] = useState<number | undefined>(undefined);
   const [traceId, setTraceId] = useState<string | null>(null);
+  // v1.7 Sprint G: rotating example chips + Shuffle ↻ (locks #21-23)
+  const [chips, setChips] = useState<string[]>(DEFAULT_EXAMPLES);
+  const loadChips = useCallback(async () => {
+    try {
+      const r = await fetch('/api/ask/example-questions?n=4');
+      if (!r.ok) return;
+      const j = await r.json();
+      const qs = (j.questions || []).map((x: { question: string }) => x.question).filter(Boolean);
+      if (qs.length) setChips(qs);
+    } catch {}
+  }, []);
+  useEffect(() => { loadChips(); }, [loadChips]);
   const abortRef = useRef<AbortController | null>(null);
   const recRef = useRef<SR | null>(null);
   const sessionId = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), []);
@@ -171,12 +184,15 @@ export default function AskClient() {
       </form>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {EXAMPLES.map((ex) => (
+        {chips.map((ex) => (
           <button key={ex} onClick={() => submit(ex)} disabled={loading} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand disabled:opacity-40">{ex}</button>
         ))}
+        <button onClick={loadChips} disabled={loading} title="Show 4 different example questions"
+          className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500 hover:border-brand hover:text-brand disabled:opacity-40"
+          aria-label="Shuffle example questions">↻</button>
         <span className="text-slate-300">|</span>
         <span className="text-[11px] uppercase tracking-wider text-slate-400">Sources</span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-brand bg-brand-faint px-2.5 py-1 text-[11px] font-medium text-brand">MKSAP / StatPearls / UpToDate</span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-brand bg-brand-faint px-2.5 py-1 text-[11px] font-medium text-brand">Even Hospital Database</span>
         <button
           type="button"
           onClick={() => setIncludePlos((v) => !v)}
