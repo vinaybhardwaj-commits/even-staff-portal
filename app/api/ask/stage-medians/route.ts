@@ -27,7 +27,7 @@ export async function GET() {
       SELECT stage,
              percentile_disc(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50
       FROM trace_events
-      WHERE created_at > NOW() - INTERVAL '30 days'
+      WHERE ts > NOW() - INTERVAL '30 days'
         AND latency_ms IS NOT NULL
         AND stage IS NOT NULL
         AND kind IN ('llm_response_stream_complete', 'llm_response', 'retrieval_hydrated', 'critique_parsed')
