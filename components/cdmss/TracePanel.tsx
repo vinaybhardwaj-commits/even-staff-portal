@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle2, Loader2, ChevronDown, ChevronUp, AlertTriangle, Copy, Check, ExternalLink } from 'lucide-react';
 import { formatDuration } from '@/lib/cdmss/format-duration';
-import { STAGE_EXPLAINERS } from '@/lib/cdmss/stage-explainers';
+import { getStageExplainer } from '@/lib/cdmss/stage-explainers';
 import { sanitizeModelNames } from '@/lib/cdmss/model-labels';
 
 type StageMedians = {
@@ -180,7 +180,7 @@ export default function TracePanel({ events, totalMs, traceId, surface }: { even
             ? <span className="text-amber-700">Longer than usual — still working</span>
             : <span>~{formatDuration(eta)} remaining</span>;
         }
-        const explainer = STAGE_EXPLAINERS[last.stage];
+        const explainer = getStageExplainer(last.stage, surface);
         return (
           <div className="border-t border-slate-200 bg-white/40 px-3 py-2">
             <div className="mb-1 flex items-center justify-between text-[10.5px] text-slate-500">
