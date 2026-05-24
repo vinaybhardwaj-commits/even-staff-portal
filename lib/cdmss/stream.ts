@@ -13,6 +13,8 @@ export type ProgressEvent =
   | { type: 'progress'; stage: Stage; msg: string; ms?: number }
   | { type: 'sources'; items: unknown[]; plos?: unknown[] }
   | { type: 'critique'; severity: string; issue_count: number; details: Record<string, unknown> }
+  | { type: 'draft_complete'; chars: number }
+  | { type: 'draft_superseded'; reason: string }
   | { type: 'token'; content: string }
   | { type: 'result'; data: unknown }
   | { type: 'done'; ms: number }

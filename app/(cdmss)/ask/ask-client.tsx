@@ -122,6 +122,10 @@ export default function AskClient() {
         }
         else if (ev.type === 'token') { fullAnswer += ev.content; setAnswer(fullAnswer); }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        else if ((ev as { type: string }).type === 'draft_complete') { /* divider: draft is the current answer */ }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        else if ((ev as { type: string }).type === 'draft_superseded') { fullAnswer = ''; setAnswer(''); /* revision starts; UI clears so the next token stream replaces the draft */ }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         else if ((ev as any).type === 'critique') { const c = ev as unknown as { severity: string; issue_count: number; details: Record<string, unknown> }; setCritique({ severity: c.severity, issue_count: c.issue_count, details: c.details }); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }

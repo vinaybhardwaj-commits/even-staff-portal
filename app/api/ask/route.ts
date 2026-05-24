@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
 import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
-import { TEXT_MODEL } from '@/lib/cdmss/llm';
+import { TEXT_MODEL, CRITIQUE_MODEL } from '@/lib/cdmss/llm';
 import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat, logStreamComplete } from '@/lib/cdmss/trace';
@@ -133,10 +133,14 @@ export async function POST(req: NextRequest) {
       const plosBlock = formatPlosForPrompt(plosHits);
       const sourceBlock = `MKSAP / StatPearls / UpToDate Excerpts:\n${contextBlock || '(none)'}\n\n${plosBlock ? 'PLOS ONE Primary Research Abstracts:\n' + plosBlock + '\n\n' : ''}`;
 
-      // ── Phase 2: DRAFT (non-streaming if self-critique enabled) ──────────
+      // ── Phase 2: DRAFT (STREAMING when self-critique enabled — UX win) ────
+      // The draft tokens go to the UI immediately so the user sees text at ~50s
+      // instead of waiting for the full critique+revise loop (~4 min).
+      // If critique later finds issues, we emit 'draft_superseded' and re-stream
+      // the revision so the UI swaps the answer.
       let draftAnswer = '';
       if (useSelfCritique) {
-        emit({ type: 'progress', stage: 'drafting', msg: `Drafting answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
+        emit({ type: 'progress', stage: 'drafting', msg: `Drafting answer with ${TEXT_MODEL}… (audit + revise will use ${CRITIQUE_MODEL} after)`, ms: Date.now() - t0 });
         const draftStart = Date.now();
         const draftRes = await tracedChat(traceId, 'draft', {
           model: TEXT_MODEL,
@@ -145,10 +149,14 @@ export async function POST(req: NextRequest) {
             { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Answer using only these excerpts. Cite textbook claims with [n] and PLOS abstracts with [P{n}].` },
           ],
           temperature: 0.2,
-          stream: false,
+          stream: true,
           ...({ options: { num_ctx: 16384 }, keep_alive: '15m' } as Record<string, unknown>),
         });
-        draftAnswer = (draftRes as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message?.content?.trim() || '';
+        for await (const part of draftRes as AsyncIterable<{ choices?: { delta?: { content?: string } }[] }>) {
+          const delta = part.choices?.[0]?.delta?.content ?? '';
+          if (delta) { draftAnswer += delta; emit({ type: 'token', content: delta }); }
+        }
+        emit({ type: 'draft_complete', chars: draftAnswer.length });
         await logStreamComplete(traceId, 'draft', draftAnswer, draftStart, { model: TEXT_MODEL });
 
         // ── Phase 3: CRITIQUE ──────────────────────────────────────────────
@@ -161,7 +169,7 @@ export async function POST(req: NextRequest) {
         } = { needs_revision: false };
         try {
           const critiqueRes = await tracedChat(traceId, 'critique', {
-            model: TEXT_MODEL,
+            model: CRITIQUE_MODEL,  // 7b instead of 14b — ~3x faster, audit quality acceptable
             messages: [
               { role: 'system', content: CRITIQUE_SYSTEM },
               { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Draft answer to audit:\n${draftAnswer}\n\nOutput the JSON critique now.` },
@@ -179,7 +187,7 @@ export async function POST(req: NextRequest) {
         } catch (e) {
           console.warn('[ask critique] parse failed', (e as Error).message);
         }
-        await logStreamComplete(traceId, 'critique', JSON.stringify(critiqueJson), critiqueStart, { model: TEXT_MODEL });
+        await logStreamComplete(traceId, 'critique', JSON.stringify(critiqueJson), critiqueStart, { model: CRITIQUE_MODEL });
 
         const issueCount = (critiqueJson.unsupported_claims?.length || 0)
           + (critiqueJson.missing_caveats?.length || 0)
@@ -196,10 +204,13 @@ export async function POST(req: NextRequest) {
 
         // ── Phase 4: REVISION (streaming) — only if critique flagged issues ────
         if (critiqueJson.needs_revision && issueCount > 0) {
-          emit({ type: 'progress', stage: 'revising', msg: `Revising to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
+          // Tell UI: the draft we already streamed is superseded; clear that buffer
+          // and accept the NEW tokens we're about to stream as the canonical answer.
+          emit({ type: 'draft_superseded', reason: `${issueCount} issue${issueCount !== 1 ? 's' : ''} found by audit` });
+          emit({ type: 'progress', stage: 'revising', msg: `Revising with ${CRITIQUE_MODEL} to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
           const revStart = Date.now();
           const revRes = await tracedChat(traceId, 'revision', {
-            model: TEXT_MODEL,
+            model: CRITIQUE_MODEL,  // 7b for the revise pass too
             messages: [
               { role: 'system', content: REVISION_SYSTEM },
               { role: 'user', content: `Question:\n${question}\n\n${sourceBlock}Earlier draft:\n${draftAnswer}\n\nAuditor's critique (JSON):\n${JSON.stringify(critiqueJson, null, 2)}\n\nOutput the revised final answer now.` },
@@ -213,12 +224,9 @@ export async function POST(req: NextRequest) {
             const delta = part.choices?.[0]?.delta?.content ?? '';
             if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
           }
-          await logStreamComplete(traceId, 'revision', fullContent, revStart, { model: TEXT_MODEL });
-        } else {
-          // Draft was clean — stream it back token-by-token so the UI feels live
-          emit({ type: 'progress', stage: 'finalizing', msg: 'Draft passed audit — no revision needed', ms: Date.now() - t0 });
-          for (const ch of draftAnswer) emit({ type: 'token', content: ch });
+          await logStreamComplete(traceId, 'revision', fullContent, revStart, { model: CRITIQUE_MODEL });
         }
+        // else: draft already streamed to UI during Phase 2; nothing to do.
       } else {
         // Self-critique disabled — original single-pass streaming behavior
         emit({ type: 'progress', stage: 'generating', msg: `Generating answer with ${TEXT_MODEL}…`, ms: Date.now() - t0 });
