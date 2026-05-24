@@ -217,7 +217,8 @@ export default function AskClient() {
           onClick={() => setIncludePlos((v) => !v)}
           disabled={loading}
           aria-pressed={includePlos}
-          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${includePlos ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-400'}`}
+          title={loading ? 'Locked while query is running' : undefined}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${includePlos ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 bg-white text-slate-500 hover:border-amber-400'}`}
         >
           {includePlos ? '✓ ' : ''}PLOS ONE (last 5y, Medicine)
         </button>
@@ -228,8 +229,8 @@ export default function AskClient() {
           onClick={() => setMultiQuery((v) => !v)}
           disabled={loading}
           aria-pressed={multiQuery}
-          title="Generate 4 query variants for richer recall"
-          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${multiQuery ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:border-violet-400'}`}
+          title={loading ? 'Locked while query is running' : 'Generate 4 query variants for richer recall'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${multiQuery ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:border-violet-400'}`}
         >
           {multiQuery ? '✓ ' : ''}Multi-query
         </button>
@@ -238,26 +239,28 @@ export default function AskClient() {
           onClick={() => setSelfCritique((v) => !v)}
           disabled={loading}
           aria-pressed={selfCritique}
-          title="Audit + revise the draft before returning"
-          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${selfCritique ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-400'}`}
+          title={loading ? 'Locked while query is running' : 'Audit + revise the draft before returning'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${selfCritique ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-400'}`}
         >
           {selfCritique ? '✓ ' : ''}Self-critique
         </button>
         <button
           type="button"
           onClick={() => setUseReranker((v) => !v)}
+          disabled={loading}
           aria-pressed={useReranker}
-          title="Cross-encoder rerank pool→top-K (better top results)"
-          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${useReranker ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-400'}`}
+          title={loading ? 'Locked while query is running' : 'Cross-encoder rerank pool→top-K (better top results)'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${useReranker ? 'border-cyan-500 bg-cyan-50 text-cyan-700' : 'border-slate-200 bg-white text-slate-500 hover:border-cyan-400'}`}
         >
           {useReranker ? '✓ ' : ''}Reranker
         </button>
         <button
           type="button"
           onClick={() => setUseSourceWeights((v) => !v)}
+          disabled={loading}
           aria-pressed={useSourceWeights}
-          title="Weight chunks by book tier + chunk type + length"
-          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${useSourceWeights ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-500 hover:border-rose-400'}`}
+          title={loading ? 'Locked while query is running' : 'Weight chunks by book tier + chunk type + length'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${useSourceWeights ? 'border-rose-500 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-500 hover:border-rose-400'}`}
         >
           {useSourceWeights ? '✓ ' : ''}Source weights
         </button>

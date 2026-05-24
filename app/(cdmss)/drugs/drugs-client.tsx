@@ -308,8 +308,8 @@ function LookupPanel() {
           onClick={() => setSelfCritique(!selfCritique)}
           disabled={loading}
           aria-pressed={selfCritique}
-          title={selfCritique ? 'Audit pass on the pharmacology phase is enabled — adds ~2-3 min for higher accuracy' : 'Audit pass disabled — faster but no second-opinion check'}
-          className={`ml-auto rounded-full border px-3 py-1 text-xs font-medium transition disabled:opacity-40 ${
+          title={loading ? 'Locked while query is running' : (selfCritique ? 'Audit pass on the pharmacology phase is enabled — adds ~2-3 min for higher accuracy' : 'Audit pass disabled — faster but no second-opinion check')}
+          className={`ml-auto rounded-full border px-3 py-1 text-xs font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
             selfCritique
               ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
               : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400'
