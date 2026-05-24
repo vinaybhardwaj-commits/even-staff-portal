@@ -263,7 +263,7 @@ export default function AskClient() {
         </button>
       </div>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} surface="ask" askChips={{ useMultiQuery: multiQuery, selfCritique, useReranker, useSourceWeights, includePlos }} /></div>}
 
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
 

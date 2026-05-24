@@ -27,6 +27,116 @@ export type TraceEvent = {
 };
 
 
+
+// v2.0.3 — chip-aware hybrid progress bar for /ask.
+// /ask differs from /drugs in two ways: (1) it has real calibrated medians
+// from /api/ask/stage-medians (rolling 30d p50 per stage), so the time-based
+// bar is data-driven not estimated; (2) the pipeline shape depends on which
+// toggle chips are active (PLOS, multi-query, self-critique, reranker,
+// source-weights). The bar should reflect the SPECIFIC query's pipeline —
+// no reserved space for stages that won't fire.
+//
+// Approach: stage milestones are computed at render time from (a) chips
+// state and (b) the actual median weights per stage. Each active stage gets
+// a milestone pct proportional to its median weight in the total. Then the
+// bar acts hybrid — the highest-hit milestone is a FLOOR, but within a band
+// the bar time-interpolates using the actual median for the next stage
+// (capped at 90% of the band so it can't overshoot the next milestone).
+export type AskChips = {
+  useMultiQuery?: boolean;
+  selfCritique?: boolean;
+  useReranker?: boolean;
+  useSourceWeights?: boolean;
+  includePlos?: boolean;
+};
+
+type AskStageSpec = { stage: string; match: RegExp; weight: number; label: string };
+
+function computeAskStages(medians: StageMedians, chips: AskChips): AskStageSpec[] {
+  const stages: AskStageSpec[] = [];
+
+  // 1. expanding — always fires; faster path when multi-query is off (just one rewrite)
+  stages.push({
+    stage: 'expanding',
+    match: chips.useMultiQuery ? /(query variants|Generating query variants)/i : /(Rewriting query|Rewrote query)/i,
+    weight: chips.useMultiQuery ? medians.variants : Math.max(3_000, medians.variants * 0.3),
+    label: chips.useMultiQuery ? 'Generating variants' : 'Rewriting query',
+  });
+
+  // 2. retrieving — always fires
+  stages.push({
+    stage: 'retrieving',
+    match: /Retrieved \d+/i,
+    weight: medians.retrieving,
+    label: 'Retrieving',
+  });
+
+  // 3. reranking OR fusing — only one fires
+  if (chips.useReranker) {
+    stages.push({
+      stage: 'reranking',
+      match: /Reranked by cross-encoder/i,
+      weight: medians.reranking,
+      label: 'Reranking',
+    });
+  } else if (chips.useSourceWeights) {
+    stages.push({
+      stage: 'fusing',
+      match: /Applied source-quality/i,
+      weight: 1_000,
+      label: 'Source-quality fusion',
+    });
+  }
+
+  // 4. answer generation — branched by selfCritique
+  if (chips.selfCritique) {
+    stages.push({ stage: 'drafting',  match: /Drafting answer/i,           weight: medians.drafting,  label: 'Drafting' });
+    stages.push({ stage: 'reviewing', match: /Auditing draft/i,            weight: medians.reviewing, label: 'Auditing' });
+    // Revising only fires if the audit flagged issues; reserve a partial band
+    // (50%) since revisions happen on ~half of queries empirically.
+    stages.push({ stage: 'revising',  match: /Revising with/i,             weight: medians.revising * 0.5, label: 'Revising' });
+  } else {
+    stages.push({
+      stage: 'generating',
+      match: /Generating answer/i,
+      weight: medians.drafting,
+      label: 'Generating',
+    });
+  }
+
+  return stages;
+}
+
+function askMilestoneFor(events: TraceEvent[], stages: AskStageSpec[]): {
+  current: number;
+  next: number;
+  nextWeightMs: number;
+  sinceMs: number;
+} {
+  // Compute cumulative weights as percentages (cap last at 95% so 'done' triggers 100%).
+  const total = stages.reduce((s, x) => s + x.weight, 0) || 1;
+  const cumPcts: number[] = [];
+  let cum = 0;
+  for (const s of stages) {
+    cum += s.weight;
+    cumPcts.push(Math.min(95, (cum / total) * 95));
+  }
+
+  let currentIdx = -1;
+  let sinceMs = Date.now();
+  for (const e of events) {
+    for (let i = 0; i < stages.length; i++) {
+      if (stages[i].match.test(e.msg)) {
+        if (i > currentIdx) { currentIdx = i; sinceMs = e.ts; }
+      }
+    }
+  }
+  const currentPct = currentIdx >= 0 ? cumPcts[currentIdx] : 2;
+  const nextPct = currentIdx + 1 < cumPcts.length ? cumPcts[currentIdx + 1] : 95;
+  const nextWeightMs = currentIdx + 1 < stages.length ? stages[currentIdx + 1].weight : 30_000;
+  return { current: currentPct, next: nextPct, nextWeightMs, sinceMs };
+}
+
 // v2.0.2 — stage-anchored progress milestones for /drugs surfaces.
 // The time-only bar from v2.0.1 still felt wrong on /drugs because the medians
 // from /api/ask/stage-medians are calibrated for /ask (~30s) so on a 7-8min
@@ -98,7 +208,7 @@ const STAGE_LABEL: Record<string, string> = {
   done: 'Done',
 };
 
-export default function TracePanel({ events, totalMs, traceId, surface }: { events: TraceEvent[]; totalMs?: number; traceId?: string | null; surface?: 'ask' | 'ddx' | 'coach' | 'drugs' | 'drugs-interactions' }) {
+export default function TracePanel({ events, totalMs, traceId, surface, askChips }: { events: TraceEvent[]; totalMs?: number; traceId?: string | null; surface?: 'ask' | 'ddx' | 'coach' | 'drugs' | 'drugs-interactions'; askChips?: AskChips }) {
   // ALL HOOKS FIRST — no early returns above this line
   const [open, setOpen] = useState(true);
   const [now, setNow] = useState(() => Date.now());
@@ -162,16 +272,32 @@ export default function TracePanel({ events, totalMs, traceId, surface }: { even
         let pct: number;
         let etaLabel: React.ReactNode;
         if (milestoneTable) {
+          // /drugs: pure stage-anchored bar (no calibrated medians on this surface).
           const ms = milestoneFor(events, milestoneTable);
           const inBandMs = Math.max(0, now - ms.sinceMs);
-          // Assume each band takes ~60s when we have no historical data; cap interpolation at 90% of the band.
           const ASSUMED_BAND_MS = 60_000;
           const bandProgress = Math.min(0.9, inBandMs / ASSUMED_BAND_MS);
           pct = Math.min(95, Math.max(2, ms.current + (ms.next - ms.current) * bandProgress));
-          // /drugs has no reliable ETA — surface what's actually happening instead of fake remaining-time.
           etaLabel = <span className="text-slate-500">{STAGE_LABEL[last.stage] || last.stage}</span>;
+        } else if (surface === 'ask' && askChips) {
+          // /ask: HYBRID — stage milestones act as a FLOOR (bar never goes backward,
+          // never overshoots), but within a band we time-interpolate using the actual
+          // median weight for the next stage from /api/ask/stage-medians. Stages flex
+          // based on chips so no reserved space for stages that won't fire.
+          const askStages = computeAskStages(medians, askChips);
+          const ms = askMilestoneFor(events, askStages);
+          const inBandMs = Math.max(0, now - ms.sinceMs);
+          const bandProgress = Math.min(0.9, inBandMs / Math.max(2_000, ms.nextWeightMs));
+          pct = Math.min(95, Math.max(2, ms.current + (ms.next - ms.current) * bandProgress));
+          // Time-based ETA against the active chip configuration's total weight.
+          const totalActiveWeight = askStages.reduce((s, x) => s + x.weight, 0);
+          const overdue = elapsed > totalActiveWeight;
+          const eta = Math.max(0, totalActiveWeight - elapsed);
+          etaLabel = overdue
+            ? <span className="text-amber-700">Longer than usual — still working</span>
+            : <span>~{formatDuration(eta)} remaining</span>;
         } else {
-          // Pre-v2.0.2 behaviour for /ask /ddx /coach where medians ARE calibrated.
+          // /ddx /coach (or /ask without chips passed) — original time-only behavior.
           const overdue = elapsed > medians.total_p50;
           const effectiveTotal = overdue ? Math.max(medians.total_p50, elapsed * 1.15) : medians.total_p50;
           const eta = Math.max(0, effectiveTotal - elapsed);
