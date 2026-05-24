@@ -1,24 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { HeartPulse, Stethoscope } from 'lucide-react';
+import { Stethoscope } from 'lucide-react';
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import { computeTimi, type TimiInputs } from '@/lib/cdmss/calculators/math/timi';
+
+const YN = (pts: number) => [
+  { value: true,  label: 'Yes', points: pts },
+  { value: false, label: 'No',  points: 0 },
+];
 
 const FIELDS: FormField[] = [
   { key: 'age_ge_65', label: 'Age ≥ 65', type: 'bool', required: true,
+    subtitle: 'Patient age 65 or above at presentation.',
+    options: YN(1),
     staticTooltip: 'Patient age 65 or above at presentation.' },
   { key: 'ge_3_risk_factors', label: '≥ 3 CAD risk factors', type: 'bool', required: true,
+    subtitle: 'Count of three or more: HTN, hypercholesterolemia, DM, family CAD, current smoker.',
+    options: YN(1),
     staticTooltip: 'HTN, hypercholesterolemia, DM, family history of CAD, current smoker — count of three or more.' },
   { key: 'known_cad_50', label: 'Known CAD with stenosis ≥ 50%', type: 'bool', required: true,
+    subtitle: 'Documented coronary stenosis ≥ 50% on prior angiography.',
+    options: YN(1),
     staticTooltip: 'Documented coronary stenosis ≥50% on prior angiography.' },
   { key: 'asa_in_7d', label: 'Aspirin use in past 7 days', type: 'bool', required: true,
+    subtitle: 'Any aspirin dose taken in the past 7 days (proxy for higher baseline risk + aspirin-failure).',
+    options: YN(1),
     staticTooltip: 'Any aspirin dose taken in the past 7 days (suggests baseline higher risk, plus implies aspirin-failure).' },
-  { key: 'severe_angina_24h', label: 'Recent severe angina (≥ 2 episodes within 24 h)', type: 'bool', required: true,
+  { key: 'severe_angina_24h', label: 'Severe angina (≥ 2 episodes within 24 h)', type: 'bool', required: true,
+    subtitle: 'Two or more anginal episodes in the preceding 24 hours.',
+    options: YN(1),
     staticTooltip: 'Two or more episodes of anginal pain in the preceding 24 hours.' },
   { key: 'elevated_markers', label: 'Elevated cardiac markers', type: 'bool', required: true,
+    subtitle: 'Troponin (or CK-MB if troponin unavailable) above the local 99th-percentile upper reference limit.',
+    options: YN(1),
     staticTooltip: 'Troponin (or CK-MB if troponin unavailable) above the local 99th-percentile upper reference limit.' },
   { key: 'st_dev_0_5', label: 'ST deviation ≥ 0.5 mm', type: 'bool', required: true,
+    subtitle: 'ST elevation OR ST depression of at least 0.5 mm on the presenting ECG.',
+    options: YN(1),
     staticTooltip: 'ST elevation OR ST depression of at least 0.5 mm on the presenting ECG.' },
 ];
 
@@ -40,6 +60,11 @@ const BAND_COLOR: Record<string, string> = {
   intermediate: 'bg-yellow-100 text-yellow-800',
   high: 'bg-red-200 text-red-800',
 };
+
+const TIMI_KEYS: Array<keyof TimiInputs> = [
+  'age_ge_65', 'ge_3_risk_factors', 'known_cad_50',
+  'asa_in_7d', 'severe_angina_24h', 'elevated_markers', 'st_dev_0_5',
+];
 
 function Result({ result }: { result: CalculatorResult & { deterministic: Det } }) {
   const d = result.deterministic;
@@ -71,5 +96,18 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function TimiCalculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        const complete = TIMI_KEYS.every((k) => typeof v[k] === 'boolean');
+        const inputs = Object.fromEntries(TIMI_KEYS.map((k) => [k, v[k] === true])) as unknown as TimiInputs;
+        try {
+          const r = computeTimi(inputs);
+          return { score: r.score, max: 7, band: r.band, band_label: r.band_label, complete };
+        } catch { return null; }
+      }}
+    />
+  );
 }

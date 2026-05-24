@@ -1,30 +1,81 @@
 'use client';
 
 import Link from 'next/link';
-import { ZapOff, Stethoscope } from 'lucide-react';
+import { Stethoscope } from 'lucide-react';
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import { computeWellsDvt, type WellsDvtInputs } from '@/lib/cdmss/calculators/math/wells_dvt';
 
 const FIELDS: FormField[] = [
-  { key: 'active_cancer', label: 'Active cancer (treatment ≤ 6 mo or palliative)', type: 'bool', required: true,
+  { key: 'active_cancer', label: 'Active cancer', type: 'bool', required: true,
+    subtitle: 'Cancer currently treated, OR treatment within the past 6 months, OR palliative only.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Cancer currently receiving treatment, OR treatment within the past 6 months, OR palliative-only.' },
   { key: 'paralysis_paresis', label: 'Paralysis, paresis, or recent LE plaster immobilization', type: 'bool', required: true,
+    subtitle: 'Lower-limb paralysis/paresis OR plaster cast on the leg within the past 12 weeks.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Lower-limb paralysis/paresis OR plaster cast on the leg within the past 12 weeks.' },
-  { key: 'bedridden_or_surg', label: 'Bedridden ≥ 3 d OR major surgery within 12 wk', type: 'bool', required: true,
+  { key: 'bedridden_or_surg', label: 'Bedridden ≥ 3 days OR major surgery within 12 weeks', type: 'bool', required: true,
+    subtitle: 'Recent bedrest ≥ 3 days OR major surgery within the past 12 weeks under general or regional anaesthesia.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Recent bedrest ≥3 days OR major surgery within the past 12 weeks under general or regional anaesthesia.' },
   { key: 'localized_tenderness', label: 'Localized tenderness along the deep venous system', type: 'bool', required: true,
+    subtitle: 'Tenderness on palpation along the popliteal / femoral vein course in the symptomatic leg.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Tenderness on palpation along the popliteal / femoral vein course in the symptomatic leg.' },
   { key: 'entire_leg_swollen', label: 'Entire leg swollen', type: 'bool', required: true,
+    subtitle: 'Diffuse swelling involving the whole limb, not just the calf.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Diffuse swelling involving the whole limb, not just the calf.' },
   { key: 'calf_swelling_3cm', label: 'Calf swelling ≥ 3 cm vs asymptomatic side', type: 'bool', required: true,
+    subtitle: 'Measured 10 cm below the tibial tuberosity; ≥ 3 cm difference between legs.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Measured 10 cm below the tibial tuberosity; difference of 3 cm or more between legs.' },
   { key: 'pitting_edema', label: 'Pitting edema confined to symptomatic leg', type: 'bool', required: true,
+    subtitle: 'Pitting edema in the symptomatic leg only — not bilateral.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Pitting edema present only in the symptomatic leg — not bilateral.' },
   { key: 'collateral_veins', label: 'Collateral superficial (non-varicose) veins', type: 'bool', required: true,
+    subtitle: 'New non-varicose superficial veins suggesting collateral flow around an occluded deep vein.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'New non-varicose superficial veins suggesting collateral flow around an occluded deep vein.' },
   { key: 'previous_dvt', label: 'Previously documented DVT', type: 'bool', required: true,
+    subtitle: 'Prior objectively-confirmed deep vein thrombosis (any site, any side).',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Prior objectively-confirmed deep vein thrombosis (any site, any side).' },
   { key: 'alt_dx_as_likely', label: 'Alternative diagnosis at least as likely as DVT', type: 'bool', required: true,
+    subtitle: 'Subtracts 2 points if true — flips low-risk gestalt (cellulitis, Baker cyst, post-thrombotic syndrome, etc.).',
+    options: [
+      { value: true,  label: 'Yes', points: -2 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Score −2 if a differential (cellulitis, Baker cyst, post-thrombotic syndrome, etc.) is at least as plausible.' },
 ];
 
@@ -46,6 +97,12 @@ const BAND_COLOR: Record<string, string> = {
   moderate: 'bg-yellow-100 text-yellow-800',
   high: 'bg-red-200 text-red-800',
 };
+
+const DVT_KEYS: Array<keyof WellsDvtInputs> = [
+  'active_cancer', 'paralysis_paresis', 'bedridden_or_surg', 'localized_tenderness',
+  'entire_leg_swollen', 'calf_swelling_3cm', 'pitting_edema', 'collateral_veins',
+  'previous_dvt', 'alt_dx_as_likely',
+];
 
 function Result({ result }: { result: CalculatorResult & { deterministic: Det } }) {
   const d = result.deterministic;
@@ -77,5 +134,19 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function WellsDvtCalculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        const complete = DVT_KEYS.every((k) => typeof v[k] === 'boolean');
+        const inputs = Object.fromEntries(DVT_KEYS.map((k) => [k, v[k] === true])) as unknown as WellsDvtInputs;
+        try {
+          const r = computeWellsDvt(inputs);
+          // Wells DVT theoretical max is +9 (−2 is a subtractor), but show /9 for clarity.
+          return { score: r.score, max: 9, band: r.band, band_label: r.band_label, complete };
+        } catch { return null; }
+      }}
+    />
+  );
 }

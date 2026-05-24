@@ -1,20 +1,46 @@
 'use client';
 
 import Link from 'next/link';
-import { Wind, Stethoscope } from 'lucide-react';
+import { Stethoscope } from "lucide-react";
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import { computeCurb65, type Curb65Inputs } from '@/lib/cdmss/calculators/math/curb65';
 
 const FIELDS: FormField[] = [
-  { key: 'confusion', label: 'Confusion (new disorientation OR AMTS ≤ 8)', type: 'bool', required: true,
+  { key: 'confusion', label: 'Confusion', type: 'bool', required: true,
+    subtitle: 'New disorientation to person/place/time OR Abbreviated Mental Test Score ≤ 8 (not chronic baseline cognitive impairment).',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'New disorientation to person/place/time, or Abbreviated Mental Test Score ≤8 — not chronic baseline cognitive impairment.' },
-  { key: 'urea_high', label: 'Urea > 7 mmol/L (BUN > 19 mg/dL)', type: 'bool', required: true,
+  { key: 'urea_high', label: 'Urea high', type: 'bool', required: true,
+    subtitle: 'Serum urea > 7 mmol/L (BUN > 19 mg/dL).',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Serum urea greater than 7 mmol/L, equivalent to BUN > 19 mg/dL.' },
   { key: 'rr_ge_30', label: 'Respiratory rate ≥ 30', type: 'bool', required: true,
+    subtitle: 'Respiratory rate at presentation ≥ 30 breaths/min — count for a full 60 s when abnormal.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Respiratory rate at presentation ≥30 breaths/min — count for a full 60 s when abnormal.' },
-  { key: 'bp_low', label: 'BP: SBP < 90 OR DBP ≤ 60', type: 'bool', required: true,
+  { key: 'bp_low', label: 'Hypotension', type: 'bool', required: true,
+    subtitle: 'Either SBP < 90 mmHg OR DBP ≤ 60 mmHg satisfies the criterion.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Either systolic <90 mmHg OR diastolic ≤60 mmHg satisfies the criterion.' },
   { key: 'age_ge_65', label: 'Age ≥ 65', type: 'bool', required: true,
+    subtitle: 'Patient age 65 or above at presentation.',
+    options: [
+      { value: true,  label: 'Yes', points: 1 },
+      { value: false, label: 'No',  points: 0 },
+    ],
     staticTooltip: 'Patient age 65 or above at presentation.' },
 ];
 
@@ -70,5 +96,26 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function Curb65Calculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        const required = ['confusion', 'urea_high', 'rr_ge_30', 'bp_low', 'age_ge_65'] as const;
+        const complete = required.every((k) => typeof v[k] === 'boolean');
+        const inputs: Curb65Inputs = {
+          confusion: v.confusion === true,
+          urea_high: v.urea_high === true,
+          rr_ge_30:  v.rr_ge_30  === true,
+          bp_low:    v.bp_low    === true,
+          age_ge_65: v.age_ge_65 === true,
+        };
+        try {
+          const r = computeCurb65(inputs);
+          return { score: r.score, max: 5, band: r.band, band_label: r.band_label, complete };
+        } catch { return null; }
+      }}
+    />
+  );
 }
+

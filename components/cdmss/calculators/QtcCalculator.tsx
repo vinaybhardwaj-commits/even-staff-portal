@@ -4,21 +4,26 @@ import Link from 'next/link';
 import { Waves, Stethoscope } from 'lucide-react';
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import { computeQtc, type QtcInputs, type QtcSex } from '@/lib/cdmss/calculators/math/qtc';
 
 const FIELDS: FormField[] = [
   { key: 'qt_ms', label: 'QT interval', type: 'integer', unit: 'ms', required: true,
+    subtitle: 'Measure from start of Q to end of T in the lead with the longest QT (typically II or V2-V3).',
     hardMin: 200, hardMax: 700, softMin: 300, softMax: 600,
     staticTooltip: 'Measured QT in ms — start of Q to end of T in the lead with the longest QT (typically II or V2-V3).' },
   { key: 'hr_bpm', label: 'Heart rate', type: 'integer', unit: 'bpm', required: false,
+    subtitle: 'Provide either HR (bpm) here OR RR (ms) below — one of the two is required.',
     hardMin: 30, hardMax: 200, softMin: 40, softMax: 180,
     staticTooltip: 'Provide HR (bpm) or use RR (ms) below — one of the two is required.' },
   { key: 'rr_ms',  label: 'RR interval (alternative)', type: 'integer', unit: 'ms', required: false,
+    subtitle: 'Alternative to HR. RR = 60000 / HR.',
     hardMin: 200, hardMax: 3000,
     staticTooltip: 'RR interval in ms (alternative to HR). RR = 60000 / HR.' },
   { key: 'sex', label: 'Sex', type: 'enum', required: true,
+    subtitle: 'Biological sex — determines Bazett normal bands (males have stricter upper limit).',
     options: [
-      { value: 'M', label: 'Male' },
-      { value: 'F', label: 'Female' },
+      { value: 'M', label: 'Male',   description: 'Bazett normal < 430 ms; prolonged > 450 ms' },
+      { value: 'F', label: 'Female', description: 'Bazett normal < 450 ms; prolonged > 470 ms' },
     ],
     staticTooltip: 'Biological sex determines Bazett normal bands — males have a stricter upper limit (<430 ms).' },
 ];
@@ -58,7 +63,7 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
         </div>
         {d.high_tdp_risk && (
           <div className="mt-2 text-xs font-medium text-rose-700">
-            ⚠ Any-method QTc &gt; 500 ms — high torsades-de-pointes risk. Review QT-prolonging drugs.
+            Warning: Any-method QTc &gt; 500 ms — high torsades-de-pointes risk. Review QT-prolonging drugs.
           </div>
         )}
       </div>
@@ -81,7 +86,7 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
             <div className="mt-1 text-xl font-semibold">{d.framingham_ms}<span className="ml-1 text-xs text-slate-400">ms</span></div>
           </div>
         </div>
-        <div className="mt-2 text-[10px] text-slate-400">RR = {d.rr_sec.toFixed(3)} s. Bazett is most over-correcting at high HR; Fridericia preferred &gt; 100 bpm.</div>
+        <div className="mt-2 text-[10px] text-slate-400">RR = {d.rr_sec.toFixed(3)} s. Bazett over-corrects at high HR; Fridericia preferred &gt; 100 bpm.</div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-2 flex items-center gap-2">
@@ -104,5 +109,24 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function QtcCalculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        // QTc is a calculated value, not a points score. Show running Bazett ms as
+        // soon as we have QT + (HR or RR) + sex; "max" omitted (not a 0-N score).
+        const qt = typeof v.qt_ms === 'number' ? v.qt_ms : undefined;
+        const hr = typeof v.hr_bpm === 'number' ? v.hr_bpm : undefined;
+        const rr = typeof v.rr_ms === 'number'  ? v.rr_ms  : undefined;
+        const sex = (v.sex as QtcSex | undefined);
+        if (!qt || (!hr && !rr) || !sex) return null;
+        try {
+          const inputs: QtcInputs = { qt_ms: qt, sex, ...(hr !== undefined ? { hr_bpm: hr } : {}), ...(rr !== undefined ? { rr_ms: rr } : {}) };
+          const r = computeQtc(inputs);
+          return { score: r.bazett_ms, band: r.band, band_label: `${r.band_label} (Bazett)`, complete: true };
+        } catch { return null; }
+      }}
+    />
+  );
 }

@@ -4,23 +4,45 @@ import Link from 'next/link';
 import { Stethoscope } from 'lucide-react';
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import { computeAlvarado, type AlvaradoInputs } from '@/lib/cdmss/calculators/math/alvarado';
+
+const YN = (pts: number) => [
+  { value: true,  label: 'Yes', points: pts },
+  { value: false, label: 'No',  points: 0 },
+];
 
 const FIELDS: FormField[] = [
-  { key: 'migration_rlq',    label: 'M: Migration of pain to RLQ',                 type: 'bool', required: true,
+  { key: 'migration_rlq', label: 'M: Migration of pain to RLQ', type: 'bool', required: true,
+    subtitle: 'Periumbilical or epigastric pain that has migrated to the right lower quadrant.',
+    options: YN(1),
     staticTooltip: 'Periumbilical or epigastric pain that has migrated to the right lower quadrant.' },
-  { key: 'anorexia',         label: 'A: Anorexia',                                 type: 'bool', required: true,
+  { key: 'anorexia', label: 'A: Anorexia', type: 'bool', required: true,
+    subtitle: 'Loss of appetite during the current illness.',
+    options: YN(1),
     staticTooltip: 'Loss of appetite during the current illness.' },
-  { key: 'nausea_vomiting',  label: 'N: Nausea or vomiting',                       type: 'bool', required: true,
+  { key: 'nausea_vomiting', label: 'N: Nausea or vomiting', type: 'bool', required: true,
+    subtitle: 'Either nausea or vomiting (or both) during the current episode.',
+    options: YN(1),
     staticTooltip: 'Either nausea or vomiting (or both) during the current episode.' },
-  { key: 'tenderness_rlq',   label: 'T: Tenderness in RLQ (+2)',                   type: 'bool', required: true,
+  { key: 'tenderness_rlq', label: 'T: Tenderness in RLQ', type: 'bool', required: true,
+    subtitle: 'Direct palpable tenderness in the right lower quadrant on examination — worth 2 points.',
+    options: YN(2),
     staticTooltip: 'Direct palpable tenderness in the right lower quadrant on examination — worth 2 points.' },
-  { key: 'rebound_pain',     label: 'R: Rebound pain',                             type: 'bool', required: true,
+  { key: 'rebound_pain', label: 'R: Rebound pain', type: 'bool', required: true,
+    subtitle: 'Pain on release of pressure over the RLQ (rebound tenderness).',
+    options: YN(1),
     staticTooltip: 'Pain on release of pressure over the RLQ (rebound tenderness).' },
-  { key: 'elevated_temp',    label: 'E: Elevated temperature ≥ 37.3 °C',           type: 'bool', required: true,
+  { key: 'elevated_temp', label: 'E: Elevated temperature ≥ 37.3 °C', type: 'bool', required: true,
+    subtitle: 'Measured temperature ≥ 37.3 °C / 99.1 °F.',
+    options: YN(1),
     staticTooltip: 'Measured temperature ≥ 37.3 °C / 99.1 °F.' },
-  { key: 'leukocytosis',     label: 'L: Leukocytosis WBC > 10,000/µL (+2)',        type: 'bool', required: true,
+  { key: 'leukocytosis', label: 'L: Leukocytosis WBC > 10,000/µL', type: 'bool', required: true,
+    subtitle: 'WBC count above 10,000/µL on CBC — worth 2 points.',
+    options: YN(2),
     staticTooltip: 'WBC count above 10,000 /µL on CBC — worth 2 points.' },
-  { key: 'shift_to_left',    label: 'S: Shift to left (neutrophilia > 75%)',       type: 'bool', required: true,
+  { key: 'shift_to_left', label: 'S: Shift to left (neutrophilia > 75%)', type: 'bool', required: true,
+    subtitle: 'Neutrophil predominance > 75% on the differential.',
+    options: YN(1),
     staticTooltip: 'Neutrophil predominance > 75% on the differential.' },
 ];
 
@@ -51,6 +73,11 @@ const ELEMENT_LABEL: Record<string, string> = {
   migration_rlq: 'M', anorexia: 'A', nausea_vomiting: 'N', tenderness_rlq: 'T',
   rebound_pain: 'R', elevated_temp: 'E', leukocytosis: 'L', shift_to_left: 'S',
 };
+
+const ALV_KEYS: Array<keyof AlvaradoInputs> = [
+  'migration_rlq', 'anorexia', 'nausea_vomiting', 'tenderness_rlq',
+  'rebound_pain', 'elevated_temp', 'leukocytosis', 'shift_to_left',
+];
 
 function Result({ result }: { result: CalculatorResult & { deterministic: Det } }) {
   const d = result.deterministic;
@@ -93,5 +120,18 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function AlvaradoCalculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        const complete = ALV_KEYS.every((k) => typeof v[k] === 'boolean');
+        const inputs = Object.fromEntries(ALV_KEYS.map((k) => [k, v[k] === true])) as unknown as AlvaradoInputs;
+        try {
+          const r = computeAlvarado(inputs);
+          return { score: r.score, max: 10, band: r.band, band_label: r.band_label, complete };
+        } catch { return null; }
+      }}
+    />
+  );
 }

@@ -4,41 +4,50 @@ import Link from 'next/link';
 import { Heart, Stethoscope } from 'lucide-react';
 import CalculatorShell from './CalculatorShell';
 import type { CalculatorConfig, CalculatorResult, FormField } from '@/lib/cdmss/calculators/types';
+import {
+  computeHeart,
+  type HeartHistory, type HeartEcg, type HeartAge, type HeartRiskFactors, type HeartTroponin,
+} from '@/lib/cdmss/calculators/math/heart';
 
 const FIELDS: FormField[] = [
   { key: 'history', label: 'History', type: 'enum', required: true,
+    subtitle: 'Clinician gestalt of the chest-pain history.',
     options: [
-      { value: 'slightly_suspicious',    label: 'Slightly suspicious (0)' },
-      { value: 'moderately_suspicious',  label: 'Moderately suspicious (1)' },
-      { value: 'highly_suspicious',      label: 'Highly suspicious (2)' },
+      { value: 'slightly_suspicious',    label: 'Slightly suspicious',   points: 0, description: 'Pleuritic / positional / reproducible pain' },
+      { value: 'moderately_suspicious',  label: 'Moderately suspicious', points: 1, description: 'Mixed features — neither classic nor clearly non-cardiac' },
+      { value: 'highly_suspicious',      label: 'Highly suspicious',     points: 2, description: 'Classic exertional substernal pressure with diaphoresis' },
     ],
     staticTooltip: 'Clinician gestalt of chest-pain history: classic exertional radiating substernal pressure with diaphoresis is highly suspicious; isolated pleuritic/positional pain is slightly suspicious.' },
   { key: 'ecg', label: 'ECG', type: 'enum', required: true,
+    subtitle: 'Compared with the patient\'s baseline ECG where possible.',
     options: [
-      { value: 'normal',                       label: 'Normal (0)' },
-      { value: 'non_specific_changes',         label: 'Non-specific repolarisation changes / known LBBB / paced (1)' },
-      { value: 'significant_st_deviation',     label: 'Significant ST deviation (2)' },
+      { value: 'normal',                       label: 'Normal',                                       points: 0 },
+      { value: 'non_specific_changes',         label: 'Non-specific repolarization disturbance',     points: 1, description: 'Repolarization changes without significant ST deviation; also LBBB, paced, LVH with strain' },
+      { value: 'significant_st_deviation',     label: 'Significant ST deviation',                    points: 2, description: 'Ischaemic ST depression or elevation not explained by LBBB, LVH, or digoxin' },
     ],
     staticTooltip: 'Score 1 for non-specific repolarisation, LBBB, paced rhythm, or LVH with strain; score 2 only for ischaemic ST depression / elevation not attributable to LBBB or LVH.' },
   { key: 'age', label: 'Age', type: 'enum', required: true,
+    subtitle: 'Patient age at presentation.',
     options: [
-      { value: 'lt_45',     label: '< 45 (0)' },
-      { value: '45_to_64',  label: '45-64 (1)' },
-      { value: 'ge_65',     label: '≥ 65 (2)' },
+      { value: 'lt_45',     label: '< 45 years',  points: 0 },
+      { value: '45_to_64',  label: '45 - 64 years', points: 1 },
+      { value: 'ge_65',     label: '≥ 65 years',  points: 2 },
     ],
     staticTooltip: 'Patient age at presentation.' },
   { key: 'risk_factors', label: 'Risk factors', type: 'enum', required: true,
+    subtitle: 'Count: HTN, DM, hypercholesterolemia, current smoker, family CAD before 55, BMI > 30. Known atherosclerotic disease auto-scores 2.',
     options: [
-      { value: 'none',                  label: 'None (0)' },
-      { value: '1_to_2',                label: '1-2 factors (1)' },
-      { value: 'ge_3_or_known_cad',     label: '≥ 3 factors OR known CAD (2)' },
+      { value: 'none',                  label: 'No risk factors',                points: 0 },
+      { value: '1_to_2',                label: '1 - 2 factors',                  points: 1 },
+      { value: 'ge_3_or_known_cad',     label: '≥ 3 factors OR known CAD',       points: 2, description: 'Prior MI / PCI / CABG, stroke, or PAD = automatic 2' },
     ],
     staticTooltip: 'Risk factors: HTN, DM, hypercholesterolemia, current smoker, family history of CAD before age 55, obesity BMI > 30. Known atherosclerotic disease (prior MI/PCI/CABG, stroke, PAD) automatically scores 2.' },
   { key: 'troponin', label: 'Troponin', type: 'enum', required: true,
+    subtitle: 'Use the assay-specific 99th-percentile upper reference limit; banding still uses 1× and 3× multipliers for hs-cTn.',
     options: [
-      { value: 'le_normal',          label: '≤ normal limit (0)' },
-      { value: '1_to_3x_normal',     label: '1-3× normal (1)' },
-      { value: 'gt_3x_normal',       label: '> 3× normal (2)' },
+      { value: 'le_normal',          label: '≤ normal limit',          points: 0 },
+      { value: '1_to_3x_normal',     label: '1 - 3 × normal',          points: 1 },
+      { value: 'gt_3x_normal',       label: '> 3 × normal',            points: 2 },
     ],
     staticTooltip: 'Use the assay-specific 99th-percentile upper reference limit. For hs-cTn, banding still uses 1× and 3× multipliers.' },
 ];
@@ -113,5 +122,25 @@ function Result({ result }: { result: CalculatorResult & { deterministic: Det } 
 }
 
 export default function HeartCalculator() {
-  return <CalculatorShell<Det> config={CFG} renderResult={Result} />;
+  return (
+    <CalculatorShell<Det>
+      config={CFG}
+      renderResult={Result}
+      liveScore={(v) => {
+        const required = ['history', 'ecg', 'age', 'risk_factors', 'troponin'] as const;
+        const complete = required.every((k) => typeof v[k] === 'string' && v[k] !== '');
+        try {
+          const inputs = {
+            history:      (v.history      as HeartHistory)     || 'slightly_suspicious',
+            ecg:          (v.ecg          as HeartEcg)         || 'normal',
+            age:          (v.age          as HeartAge)         || 'lt_45',
+            risk_factors: (v.risk_factors as HeartRiskFactors) || 'none',
+            troponin:     (v.troponin     as HeartTroponin)    || 'le_normal',
+          };
+          const r = computeHeart(inputs);
+          return { score: r.score, max: 10, band: r.band, band_label: r.band_label, complete };
+        } catch { return null; }
+      }}
+    />
+  );
 }
