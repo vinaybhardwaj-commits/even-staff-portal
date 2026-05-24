@@ -4,6 +4,7 @@ import { useState, useRef, useMemo } from 'react';
 import { Mic, MicOff, Send, ChevronDown, ChevronUp, BookOpen, Loader2 } from 'lucide-react';
 import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
+import { MarkdownAnswer } from '@/components/cdmss/MarkdownAnswer';
 
 type Citation = { n: number; id: number; book: string; chapter: string | null; page_start: number | null; page_end: number | null; item_number: string | null; chunk_type: string; similarity: number; preview: string; };
 type PlosCitation = { n: number; kind: 'plos'; doi: string; title: string; authors: string[]; year: number; url: string; full_url: string; preview: string; };
@@ -261,11 +262,9 @@ export default function AskClient() {
 
       {(answer || loading) && (
         <article className="mt-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-800">
-            {renderWithCitations(answer, citations, onCite)}
-            {loading && !answer && <span className="text-slate-400">…</span>}
-            {loading && answer && <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-slate-400" />}
-          </div>
+          {answer && <MarkdownAnswer text={answer} onCite={(n) => onCite(parseInt(n.replace('P', ''), 10))} />}
+          {loading && !answer && <div className="text-slate-400">…</div>}
+          {loading && answer && <span className="ml-0.5 inline-block h-4 w-2 animate-pulse bg-slate-400" />}
         </article>
       )}
 
