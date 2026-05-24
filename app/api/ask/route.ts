@@ -4,7 +4,7 @@ import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { TEXT_MODEL, CRITIQUE_MODEL } from '@/lib/cdmss/llm';
 import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
-import { startTrace, finishTrace, tracedChat, logStreamComplete } from '@/lib/cdmss/trace';
+import { startTrace, finishTrace, tracedChat, logStreamComplete, logEvent, setTraceQuestionPreview, setTraceSeverity, setTraceModelSummary, setTraceFinalAnswer } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;  // v1.6 hotfix: was 180; full stack on Mac Mini Ollama needs 200-280s with all features on
@@ -70,10 +70,22 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   const traceId = await startTrace('ask', { question, bookFilter: body.bookFilter, multiQuery: useMultiQuery, selfCritique: useSelfCritique, reranker: useReranker, sourceWeights: useSourceWeights, embeddingV2: useEmbeddingV2 });
 
+  // v1.7 Sprint A: capture request + denormalize fast-access fields on traces row.
+  await Promise.all([
+    logEvent(traceId, 'request_received', null, { body, ua: req.headers.get('user-agent') || '', t: new Date().toISOString() }),
+    setTraceQuestionPreview(traceId, question),
+    setTraceModelSummary(traceId, { draft: TEXT_MODEL, critique: CRITIQUE_MODEL, revise: CRITIQUE_MODEL, embedding: 'mxbai-embed-large', reranker: 'llama3.1:8b-judge' }),
+  ]);
+
   (async () => {
     let outcome: 'success' | 'error' | 'partial' = 'success';
     let outcomeMsg: string | undefined;
     try {
+      // v1.7 Sprint A: track the final assembled answer across all branches
+      // (clean draft, revised draft, single-pass with selfCritique off) so we
+      // can emit a final_answer event + denormalize into traces.final_answer_text.
+      let finalAnswer = '';
+
       // ── Phase 1: RETRIEVAL ──────────────────────────────────────────────
       emit({ type: 'progress', stage: 'expanding', msg: useMultiQuery ? 'Generating query variants…' : 'Rewriting query for semantic search…' });
       const includePlos = body.includePlos !== false;
@@ -92,6 +104,31 @@ export async function POST(req: NextRequest) {
 
       const [retrieveResult, plosHits] = await Promise.all([retrievalPromise, plosPromise]);
       const hits = retrieveResult.hits;
+      // v1.7 Sprint A: forensic capture — full text of every retrieved chunk + scores
+      await Promise.all([
+        logEvent(traceId, 'retrieval_hydrated', 'retrieving', {
+          variants: retrieveResult.variants,
+          per_variant_counts: retrieveResult.perVariantCounts,
+          hits: hits.map((h) => ({
+            id: h.id, book: h.book, chapter: h.chapter, section: h.section,
+            page_start: h.page_start, page_end: h.page_end,
+            chunk_type: h.chunk_type, token_count: h.token_count,
+            similarity: h.similarity,
+            // @ts-expect-error v1.6 added these fields to ChunkHitWithMeta
+            source_quality_weight: h.source_quality_weight,
+            // @ts-expect-error v1.6 added these fields
+            rerank_score: h.rerank_score,
+            // @ts-expect-error v1.6 added these fields
+            rerank_backend: h.rerank_backend,
+            text: h.text,  // FULL TEXT — biggest forensic capture
+          })),
+        }),
+        includePlos ? logEvent(traceId, 'plos_search', 'retrieving', {
+          query: question.slice(0, 200),
+          hit_count: plosHits.length,
+          hits: plosHits.map((p) => ({ doi: p.doi, title: p.title, year: p.year, authors: p.authors, url: p.url, abstract: p.abstract })),
+        }) : Promise.resolve(),
+      ]);
 
       if (useMultiQuery && retrieveResult.variants.length > 1) {
         emit({
@@ -154,7 +191,15 @@ export async function POST(req: NextRequest) {
         });
         for await (const part of draftRes as AsyncIterable<{ choices?: { delta?: { content?: string } }[] }>) {
           const delta = part.choices?.[0]?.delta?.content ?? '';
-          if (delta) { draftAnswer += delta; emit({ type: 'token', content: delta }); }
+          if (delta) {
+            draftAnswer += delta;
+            emit({ type: 'token', content: delta });
+            // v1.7 Sprint A: token-level forensic capture (TRACE_TOKENS lock #7 default ON)
+            if (process.env.TRACE_TOKENS !== 'false') {
+              // Fire-and-forget; don't block the stream on DB write latency
+              logEvent(traceId, 'stream_event', 'drafting', { content: delta }).catch(() => {});
+            }
+          }
         }
         emit({ type: 'draft_complete', chars: draftAnswer.length });
         await logStreamComplete(traceId, 'draft', draftAnswer, draftStart, { model: TEXT_MODEL });
@@ -195,9 +240,22 @@ export async function POST(req: NextRequest) {
           + (critiqueJson.citation_problems?.length || 0)
           + (critiqueJson.missing_relevant_evidence?.length || 0);
 
+        const severity = critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none');
+
+        // v1.7 Sprint A: forensic capture of critique JSON + denormalize severity
+        await Promise.all([
+          logEvent(traceId, 'critique_parsed', 'reviewing', {
+            issue_count: issueCount,
+            severity,
+            needs_revision: critiqueJson.needs_revision,
+            critique: critiqueJson,
+          }),
+          setTraceSeverity(traceId, severity),
+        ]);
+
         emit({
           type: 'critique',
-          severity: critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none'),
+          severity,
           issue_count: issueCount,
           details: critiqueJson,
         });
@@ -222,9 +280,19 @@ export async function POST(req: NextRequest) {
           let fullContent = '';
           for await (const part of revRes) {
             const delta = part.choices?.[0]?.delta?.content ?? '';
-            if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
+            if (delta) {
+              fullContent += delta;
+              emit({ type: 'token', content: delta });
+              if (process.env.TRACE_TOKENS !== 'false') {
+                logEvent(traceId, 'stream_event', 'revising', { content: delta }).catch(() => {});
+              }
+            }
           }
           await logStreamComplete(traceId, 'revision', fullContent, revStart, { model: CRITIQUE_MODEL });
+          finalAnswer = fullContent;
+        } else {
+          // Draft was clean — that's the final answer
+          finalAnswer = draftAnswer;
         }
         // else: draft already streamed to UI during Phase 2; nothing to do.
       } else {
@@ -244,10 +312,29 @@ export async function POST(req: NextRequest) {
         let fullContent = '';
         for await (const part of completion) {
           const delta = part.choices?.[0]?.delta?.content ?? '';
-          if (delta) { fullContent += delta; emit({ type: 'token', content: delta }); }
+          if (delta) {
+            fullContent += delta;
+            emit({ type: 'token', content: delta });
+            if (process.env.TRACE_TOKENS !== 'false') {
+              logEvent(traceId, 'stream_event', 'generating', { content: delta }).catch(() => {});
+            }
+          }
         }
         await logStreamComplete(traceId, 'answer', fullContent, llmStart, { model: TEXT_MODEL });
+        finalAnswer = fullContent;
       }
+
+      // v1.7 Sprint A: emit final_answer event + denormalize into traces.final_answer_text
+      // for fast list rendering + tsvector indexing.
+      await Promise.all([
+        logEvent(traceId, 'final_answer', 'done', {
+          answer: finalAnswer,
+          char_count: finalAnswer.length,
+          total_ms: Date.now() - t0,
+        }),
+        setTraceFinalAnswer(traceId, finalAnswer),
+      ]);
+
       emit({ type: 'done', ms: Date.now() - t0 });
     } catch (e) {
       outcome = 'error';
