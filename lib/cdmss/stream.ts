@@ -18,6 +18,8 @@ export type ProgressEvent =
   | { type: 'token'; content: string }
   | { type: 'result'; data: unknown }
   | { type: 'done'; ms: number }
+  | { type: 'pubchem_facts'; data: unknown }                                              // v1.9
+  | { type: 'class_overlap'; pairs: unknown[] }                                            // v1.9
   | { type: 'error'; message: string };
 
 export function makeNdjsonStream() {
