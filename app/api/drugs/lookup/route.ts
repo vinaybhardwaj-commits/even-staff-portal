@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { retrieve } from '@/lib/cdmss/retrieve';
+import { enrichDrug, type PubChemFacts } from '@/lib/cdmss/pubchem';
 import { llm } from '@/lib/cdmss/llm';
 import { startTrace, logEvent, finishTrace, tracedChat } from '@/lib/cdmss/trace';
 import { parseLooseJson, normalizeDrugName } from '@/lib/cdmss/drugs';
@@ -201,6 +202,9 @@ export async function POST(req: NextRequest) {
       // first fix the bm25_pool=0 bug (D12.2) so hybrid retrieval is actually hybrid.
       // D12.2: BM25 leg gets just the drug name (highest-IDF term). The full boilerplate
       // query AND-tokenized to zero hits across all earlier traces.
+      // v1.9: parallel PubChem enrichment. Soft-fails — never blocks retrieve.
+      const pubchemPromise = enrichDrug(normalized).catch(() => null as PubChemFacts | null);
+
       const result = await retrieve(query, { topK: 10, minSimilarity: 0.3, bm25Query: normalized });
       const hits = result.hits;
       await logEvent(traceId, 'retrieve', 'retrieving', {
@@ -225,7 +229,30 @@ export async function POST(req: NextRequest) {
       }));
       emit({ type: 'sources', items: citations });
 
-      const contextBlock = buildContext(hits);
+      // v1.9: await PubChem (started above, parallel with retrieve)
+      const pubchem = await pubchemPromise;
+      if (pubchem && pubchem.cid) {
+        await logEvent(traceId, 'pubchem_enrich', 'retrieving', {
+          cid: pubchem.cid,
+          atc_codes: pubchem.atc_codes,
+          synonyms_count: pubchem.synonyms.length,
+          mesh_count: pubchem.mesh_pharmacological_actions.length,
+        });
+        emit({ type: 'pubchem_facts', data: pubchem });
+        emit({ type: 'progress', stage: 'retrieving', msg: `PubChem CID ${pubchem.cid} · ${pubchem.synonyms.length} synonyms · ATC ${pubchem.atc_codes.join(', ') || '—'}`, ms: Date.now() - t0 });
+      }
+
+      // Pass PubChem facts to LLM context — augments MKSAP excerpts with identity + class data.
+      const pubchemBlock = pubchem && pubchem.cid ? (
+        `\n\n--- PUBCHEM IDENTITY (authoritative from PubChem CID ${pubchem.cid}) ---\n` +
+        `Canonical name: ${pubchem.canonical_name}\n` +
+        `Top synonyms: ${pubchem.synonyms.slice(0, 8).join(', ')}\n` +
+        (pubchem.atc_codes.length ? `ATC: ${pubchem.atc_codes.join(', ')}\n` : '') +
+        (pubchem.mesh_pharmacological_actions.length ? `MeSH actions: ${pubchem.mesh_pharmacological_actions.join(' | ')}\n` : '') +
+        (pubchem.indication ? `Indication summary: ${pubchem.indication}\n` : '')
+      ) : '';
+
+      const contextBlock = buildContext(hits) + pubchemBlock;
 
       for (const phase of PHASES) {
         const phaseStart = Date.now();

@@ -55,12 +55,29 @@ type Pair = {
   management?: string;
   citation_ids?: number[];
 };
+type PubChemFacts = {
+  cid: number | null;
+  canonical_name: string | null;
+  synonyms: string[];
+  mesh_pharmacological_actions: string[];
+  atc_codes: string[];
+  indication: string | null;
+  url: string | null;
+  fetched_at: string;
+};
+type ClassOverlapPair = {
+  a: string; b: string;
+  cid_a: number | null; cid_b: number | null;
+  shared_atc3: string[]; shared_atc2: string[]; shared_labels: string[];
+};
 type InteractionsResp = {
   input?: string[];
   normalized?: string[];
   summary?: string;
   pairs?: Pair[];
   citations?: Citation[];
+  class_overlap_pairs?: ClassOverlapPair[];
+  pubchem_facts?: Array<{ cid: number | null; canonical_name: string | null; atc_codes: string[]; url: string | null } | null>;
   duration_ms?: number;
   error?: string;
 };
@@ -156,6 +173,7 @@ function LookupPanel() {
     setRenalCtxBanner(null);
   }
   const [data, setData] = useState<LookupResp | null>(null);
+  const [pubchemFacts, setPubchemFacts] = useState<PubChemFacts | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
@@ -175,7 +193,7 @@ function LookupPanel() {
     e?.preventDefault();
     const q = drug.trim();
     if (!q) return;
-    setError(null); setData(null); setLoading(true); setOpenIds({});
+    setError(null); setData(null); setPubchemFacts(null); setLoading(true); setOpenIds({});
     setTrace([]); setTotalMs(undefined); setTraceId(null);
     const t0 = Date.now();
     try {
@@ -202,6 +220,7 @@ function LookupPanel() {
           dRef.current = { ...(dRef.current || {} as LookupResp), ...(ev.data as Partial<LookupResp>) } as LookupResp;
           setData(dRef.current);
         }
+        else if (ev.type === 'pubchem_facts') { setPubchemFacts((ev as unknown as { data: PubChemFacts }).data); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
       });
@@ -365,6 +384,49 @@ function LookupPanel() {
               </Group>
             )}
           </div>
+
+          {pubchemFacts && pubchemFacts.cid && (
+            <section className="mt-5 rounded-xl border border-sky-200 bg-sky-50/40 p-4">
+              <header className="mb-3 flex items-baseline justify-between border-b border-sky-200 pb-2">
+                <div>
+                  <div className="text-base font-semibold text-sky-900">Identity & Pharmacology</div>
+                  <div className="text-xs text-sky-700">{pubchemFacts.canonical_name}{pubchemFacts.atc_codes.length ? ` · ATC ${pubchemFacts.atc_codes.join(', ')}` : ''}</div>
+                </div>
+                <span className="rounded bg-sky-100 px-2 py-0.5 text-[10px] uppercase tracking-wider text-sky-800">PubChem CID {pubchemFacts.cid}</span>
+              </header>
+              {pubchemFacts.mesh_pharmacological_actions.length > 0 && (
+                <div className="mb-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-sky-700">MeSH pharmacological actions</div>
+                  <ul className="ml-4 list-disc space-y-0.5 text-sm text-slate-700">
+                    {pubchemFacts.mesh_pharmacological_actions.slice(0, 4).map((m, i) => <li key={i}>{m}</li>)}
+                  </ul>
+                </div>
+              )}
+              {pubchemFacts.synonyms.length > 1 && (
+                <div className="mb-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-sky-700">Synonyms (incl. brand names)</div>
+                  <div className="flex flex-wrap gap-1">
+                    {pubchemFacts.synonyms.slice(0, 15).map((s, i) => (
+                      <span key={i} className="rounded bg-white border border-sky-200 px-1.5 py-0.5 text-[11px] text-slate-700">{s}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {pubchemFacts.indication && (
+                <div className="mb-3 rounded border border-sky-200 bg-white p-2 text-xs italic text-slate-700">
+                  <span className="font-semibold not-italic text-sky-800">Indication: </span>{pubchemFacts.indication}
+                </div>
+              )}
+              {pubchemFacts.url && (
+                <div className="flex flex-wrap gap-1.5 border-t border-sky-100 pt-2">
+                  <a href={pubchemFacts.url} target="_blank" rel="noopener noreferrer"
+                     className="inline-flex items-center gap-1 rounded bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800 hover:bg-sky-200">
+                    View on PubChem ↗
+                  </a>
+                </div>
+              )}
+            </section>
+          )}
 
           {data.citations && data.citations.length > 0 && (
             <div className="mt-5 flex flex-wrap items-center gap-1.5 border-t pt-3">
@@ -554,6 +616,28 @@ function InteractionsPanel() {
 
       {data && !loading && (
         <div className="mt-6 space-y-4">
+          {data.class_overlap_pairs && data.class_overlap_pairs.length > 0 && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-4">
+              <div className="flex items-baseline justify-between border-b border-sky-200 pb-2">
+                <h2 className="text-sm font-semibold text-sky-900">Pharmacological class overlap (from PubChem ATC)</h2>
+                <span className="text-[10px] uppercase tracking-wider text-sky-700">Deterministic safety net</span>
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {data.class_overlap_pairs.map((cop, i) => (
+                  <div key={i} className="flex flex-wrap items-baseline gap-2 text-sm">
+                    <span className="font-medium text-sky-900 capitalize">{cop.a}</span>
+                    <span className="text-sky-400">↔</span>
+                    <span className="font-medium text-sky-900 capitalize">{cop.b}</span>
+                    <span className="text-sky-600">shared class:</span>
+                    {cop.shared_labels.map((l, j) => (
+                      <span key={j} className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-900">{l}</span>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-[11px] italic text-sky-700">Class overlap means cumulative pharmacodynamic risk even if no specific pairwise interaction is listed below.</div>
+            </div>
+          )}
           {data.summary && (
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Summary</h2>
