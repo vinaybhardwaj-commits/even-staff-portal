@@ -36,7 +36,27 @@ Use for workup algorithms, decision trees, or short flowcharts.
 \`\`\`dosing-card
 {"drug":"Metformin","starting_dose":"500mg PO BID with meals","max_dose":"2000mg/day","indication":"Type 2 DM","renal":[{"egfr":"<30","guidance":"contraindicated"}],"key_warnings":["Hold for IV contrast","B12 deficiency long-term"],"citation_ids":[1,3]}
 \`\`\`
-Use for drug dosing questions. Required: drug, starting_dose. Optional: indication, max_dose, renal[], hepatic[], pediatric, elderly, pregnancy, key_warnings[], black_box, citation_ids[].`;
+Use for drug dosing questions. Required: drug, starting_dose. Optional: indication, max_dose, renal[], hepatic[], pediatric, elderly, pregnancy, key_warnings[], black_box, citation_ids[].
+
+\`\`\`risk-score
+{"name":"CHA2DS2-VASc","components":[{"label":"Congestive HF","value":true,"points":1},{"label":"Hypertension","value":true,"points":1},{"label":"Age ≥75","value":false,"points":0},{"label":"Diabetes","value":true,"points":1},{"label":"Stroke/TIA","value":false,"points":0},{"label":"Vascular disease","value":false,"points":0},{"label":"Age 65-74","value":true,"points":1},{"label":"Sex (female)","value":true,"points":1}],"total":5,"max_total":9,"interpretation_bands":[{"range":"0","meaning":"Low risk","action":"No anticoag","severity":"low"},{"range":"1","meaning":"Borderline","action":"Consider anticoag","severity":"moderate"},{"range":"≥2","meaning":"Anticoagulate","action":"DOAC preferred","severity":"high"}],"citation_ids":[1]}
+\`\`\`
+Use for clinical scoring tools (CHA2DS2-VASc, HEART, qSOFA, Wells, GBS, NIHSS, Centor, MELD…). Required: name + components[] + total. Optional: max_total, interpretation_bands[], citation_ids[]. Severity = low|moderate|high|critical.
+
+\`\`\`drug-comparison
+{"question":"DOAC vs warfarin in non-valvular AF","options":[{"drug":"Apixaban","dose":"5mg BID","monitoring":"None routine","monitoring_burden":"minimal","cost_tier":"$$$","evidence_grade":"Class I A","notes":"Renal dose adjust"},{"drug":"Warfarin","dose":"INR 2-3 target","monitoring":"INR weekly→monthly","monitoring_burden":"heavy","cost_tier":"$","evidence_grade":"Class I A","notes":"Diet + interactions"}],"bottom_line":"DOAC preferred in most pts; warfarin if mechanical valve or mod-severe MS.","citation_ids":[2]}
+\`\`\`
+Use for X-vs-Y pharma comparisons. Required: question + options[] (≥2). Optional per option: dose, indications, contraindications, monitoring, monitoring_burden (none|minimal|moderate|heavy), cost_tier ($|$$|$$$|$$$$), evidence_grade, notes. Optional top-level: bottom_line, citation_ids[].
+
+\`\`\`lab-trend
+{"test_name":"HbA1c","unit":"%","normal_range":"<5.7","values":[{"when":"Visit 1","value":9.2,"flag":"critical"},{"when":"Visit 2 (3mo)","value":7.8,"flag":"high"},{"when":"Visit 3 (6mo)","value":7.1,"flag":"high"},{"when":"Visit 4 (9mo)","value":6.8,"flag":"high"}],"narrative":"Steady improvement on metformin + lifestyle; target <7 reached at 9mo.","citation_ids":[3]}
+\`\`\`
+Use for serial labs (HbA1c trend, troponin rise/fall, INR titration, creatinine after AKI). Required: test_name + values[] (≥2 with numeric value). Optional: unit, normal_range, narrative, flag per value (low|normal|high|critical), citation_ids[].
+
+\`\`\`decision-tree
+{"title":"Suspected PE workup","root":{"question":"Wells score?","branches":[{"label":"≤4","leads_to":{"question":"D-dimer?","branches":[{"label":"Negative","leads_to":{"action":"PE excluded","urgency":"routine"}},{"label":"Positive","leads_to":{"action":"CTPA","urgency":"urgent"}}]}},{"label":">4","leads_to":{"action":"CTPA without D-dimer","urgency":"urgent","note":"Empirical anticoag if delay"}}]},"citation_ids":[4]}
+\`\`\`
+Use for clinical decision flows. Required: title + root. Root is recursive — either {question, branches[{label, leads_to}]} OR {action, urgency, note}. urgency = routine|urgent|emergent. Prefer this over mermaid when the flow has clinical actions/urgency at leaves.`;
 
 const CRITIQUE_SYSTEM = `You are a clinical accuracy auditor. You are reviewing a draft answer written by an AI medical study companion.
 
