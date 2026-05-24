@@ -7,7 +7,7 @@ import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
 import { startTrace, finishTrace, tracedChat, logStreamComplete } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
-export const maxDuration = 180;  // self-critique adds 2 extra LLM passes
+export const maxDuration = 300;  // v1.6 hotfix: was 180; full stack on Mac Mini Ollama needs 200-280s with all features on
 
 const SYSTEM_PROMPT = `You are Even CDMSS, a medical study companion for residents and physicians.
 You answer questions using ONLY the excerpts provided below — they come from two source families:

@@ -18,15 +18,13 @@ import { retrieve, type RetrieveOptions, type RetrieveResult } from './retrieve'
 import type { ChunkHit } from './db';
 
 const VARIANT_MODEL = 'llama3.1:8b';
-const VARIANT_COUNT = 4;  // 4 variants + the original = 5 retrievals fanned out
+const VARIANT_COUNT = 2;  // 2 variants + the original = 3 retrievals fanned out (v1.6 hotfix: was 4, cut to keep latency under 300s on Mac Mini Ollama)
 
 const SYSTEM_VARIANTS = `You are a clinical query reformulator. Given a clinician's question, output ${VARIANT_COUNT} alternative phrasings that approach the same underlying information need from different angles, in JSON.
 
 Cover these angles (one per variant, in order):
-1. Definition / pathophysiology angle
-2. Diagnostic workup / criteria angle
-3. Management / treatment angle
-4. Complications / prognosis / red-flags angle
+1. Diagnostic workup / criteria angle
+2. Management / treatment angle
 
 Return ONLY a JSON array of strings, no prose:
 ["variant 1", "variant 2", "variant 3", "variant 4"]
@@ -87,7 +85,7 @@ export async function retrieveMultiQuery(
 
   const results = await Promise.all(
     allQueries.map((q) =>
-      retrieve(q, { ...opts, topK: perVariantK }).catch((e) => {
+      retrieve(q, { ...opts, topK: perVariantK, skipExpand: true }).catch((e) => {
         console.warn('[multi-query] variant retrieve failed', q.slice(0, 60), (e as Error).message);
         return { hits: [], expandedQuery: q } as RetrieveResult;
       }),
