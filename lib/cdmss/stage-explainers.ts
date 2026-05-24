@@ -99,6 +99,41 @@ const DRUGS_INTERACTIONS_EXPLAINERS: Record<string, StageExplainer> = {
   },
 };
 
+
+// v2.0.3b — /ddx generates a structured differential diagnosis JSON, not free-text.
+// The shared 'drafting'/'reviewing'/'revising' copy is /ask-flavored ("draft of your
+// answer" implies a written response); /ddx-specific copy is clearer for clinicians.
+const DDX_EXPLAINERS: Record<string, StageExplainer> = {
+  expanding: {
+    title: 'Expanding the clinical question',
+    body: 'Compiling the chief complaint + history + exam + vitals into a structured query, and (if Multi-query is on) generating 3 reformulations from different diagnostic angles (e.g. "what could present with these vitals", "what are the cannot-miss causes of this CC"). All variants then run in parallel against the textbook + PLOS corpus.',
+  },
+  retrieving: {
+    title: 'Pulling relevant evidence',
+    body: 'Hybrid retrieval across MKSAP/Harrison\u2019s/Cecil/Kaplan textbook chunks plus PLOS ONE clinical case literature (last 5 years). Source quality + reranker run inline. The pool narrows to the most relevant excerpts for differential generation.',
+  },
+  drafting: {
+    title: 'Drafting the differential',
+    body: 'The reasoning model is enumerating likely diagnoses, ranking by clinical likelihood, identifying cannot-miss conditions, and proposing distinguishing features + next investigations for each. Slowest single step \u2014 expect 30-60s.',
+  },
+  reviewing: {
+    title: 'Auditing the DDx',
+    body: 'A second pass checks for missing cannot-miss diagnoses, likelihood errors (over- or under-weighting), unsupported clinical claims, and gaps in distinguishing features or investigations. If issues are found, the DDx will be revised.',
+  },
+  revising: {
+    title: 'Revising the DDx',
+    body: 'The audit flagged issues. The reasoning model is regenerating the differential to fix every problem the auditor identified \u2014 adding missing cannot-miss diagnoses, correcting likelihood weights, tightening distinguishing features.',
+  },
+  generating: {
+    title: 'Reasoning through the case',
+    body: 'Single-pass reasoning (self-critique is off). The reasoning model is generating the differential without an audit/revision step \u2014 faster but no second-opinion check.',
+  },
+  parsing: {
+    title: 'Parsing the differential JSON',
+    body: 'Converting the model output into the structured DDx schema (cannot-miss diagnoses, likelihood %, distinguishing features, next investigations, PLOS citation IDs).',
+  },
+};
+
 /**
  * Get the explainer for a stage on a given surface. Falls back to the shared
  * STAGE_EXPLAINERS map when the surface doesn't have a custom override.
@@ -107,5 +142,6 @@ const DRUGS_INTERACTIONS_EXPLAINERS: Record<string, StageExplainer> = {
 export function getStageExplainer(stage: string, surface?: string): StageExplainer | undefined {
   if (surface === 'drugs') return DRUGS_EXPLAINERS[stage] ?? STAGE_EXPLAINERS[stage];
   if (surface === 'drugs-interactions') return DRUGS_INTERACTIONS_EXPLAINERS[stage] ?? STAGE_EXPLAINERS[stage];
+  if (surface === 'ddx') return DDX_EXPLAINERS[stage] ?? STAGE_EXPLAINERS[stage];
   return STAGE_EXPLAINERS[stage];
 }

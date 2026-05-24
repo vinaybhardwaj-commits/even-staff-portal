@@ -403,7 +403,33 @@ export default function DdxClient() {
         ))}
       </div>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
+      {/* v2.0.3b — pipeline toggle chips (mirrors /ask). PLOS stays hardcoded on for /ddx;
+          revisit if V wants a toggle. Chips lock during loading per v2.0.3 polish pattern. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] uppercase tracking-wider text-slate-400">Pipeline</span>
+        <button
+          type="button"
+          onClick={() => setMultiQuery((v) => !v)}
+          disabled={loading}
+          aria-pressed={multiQuery}
+          title={loading ? 'Locked while query is running' : 'Generate 4 query variants for richer recall'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${multiQuery ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-500 hover:border-violet-400'}`}
+        >
+          {multiQuery ? '✓ ' : ''}Multi-query
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelfCritique((v) => !v)}
+          disabled={loading}
+          aria-pressed={selfCritique}
+          title={loading ? 'Locked while query is running' : 'Audit + revise the DDx before returning'}
+          className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${selfCritique ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-400'}`}
+        >
+          {selfCritique ? '✓ ' : ''}Self-critique
+        </button>
+      </div>
+
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} surface="ddx" askChips={{ useMultiQuery: multiQuery, selfCritique, useReranker: true, useSourceWeights: true, includePlos: true }} /></div>}
 
       {error && (
         <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>

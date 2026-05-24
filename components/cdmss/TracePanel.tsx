@@ -107,6 +107,56 @@ function computeAskStages(medians: StageMedians, chips: AskChips): AskStageSpec[
   return stages;
 }
 
+
+// v2.0.3b — /ddx stage spec. Mirrors /ask hybrid pattern but with /ddx-specific
+// emit-msg regexes ("Drafting with the reasoning model" vs "Drafting answer"),
+// no reranking/fusing surface events (collapsed into retrieve()), and an
+// extra `parsing` step since /ddx returns structured DDx JSON.
+function computeDdxStages(medians: StageMedians, chips: AskChips): AskStageSpec[] {
+  const stages: AskStageSpec[] = [];
+
+  // expanding — multi-query variants OR single rewrite
+  stages.push({
+    stage: 'expanding',
+    match: chips.useMultiQuery ? /(Generating query variants|Generated \d+ query variants)/i : /(Building clinical summary|expanding query)/i,
+    weight: chips.useMultiQuery ? medians.variants : Math.max(3_000, medians.variants * 0.3),
+    label: chips.useMultiQuery ? 'Generating variants' : 'Expanding query',
+  });
+
+  // retrieving — always fires
+  stages.push({
+    stage: 'retrieving',
+    match: /Retrieved \d+/i,
+    weight: medians.retrieving,
+    label: 'Retrieving',
+  });
+
+  // answer generation — branched by selfCritique. /ddx uses qwen2.5:14b for both
+  // draft and revise so timings track /ask medians closely.
+  if (chips.selfCritique) {
+    stages.push({ stage: 'drafting',  match: /Drafting with/i,             weight: medians.drafting,  label: 'Drafting DDx' });
+    stages.push({ stage: 'reviewing', match: /Auditing DDx/i,              weight: medians.reviewing, label: 'Auditing DDx' });
+    stages.push({ stage: 'revising',  match: /Revising DDx/i,              weight: medians.revising * 0.5, label: 'Revising DDx' });
+  } else {
+    stages.push({
+      stage: 'generating',
+      match: /Reasoning with/i,
+      weight: medians.drafting,
+      label: 'Reasoning',
+    });
+  }
+
+  // parsing — always fires on /ddx (structured JSON output)
+  stages.push({
+    stage: 'parsing',
+    match: /Parsing differential/i,
+    weight: 1_500,
+    label: 'Parsing DDx',
+  });
+
+  return stages;
+}
+
 function askMilestoneFor(events: TraceEvent[], stages: AskStageSpec[]): {
   current: number;
   next: number;
@@ -279,12 +329,14 @@ export default function TracePanel({ events, totalMs, traceId, surface, askChips
           const bandProgress = Math.min(0.9, inBandMs / ASSUMED_BAND_MS);
           pct = Math.min(95, Math.max(2, ms.current + (ms.next - ms.current) * bandProgress));
           etaLabel = <span className="text-slate-500">{STAGE_LABEL[last.stage] || last.stage}</span>;
-        } else if (surface === 'ask' && askChips) {
-          // /ask: HYBRID — stage milestones act as a FLOOR (bar never goes backward,
-          // never overshoots), but within a band we time-interpolate using the actual
-          // median weight for the next stage from /api/ask/stage-medians. Stages flex
-          // based on chips so no reserved space for stages that won't fire.
-          const askStages = computeAskStages(medians, askChips);
+        } else if ((surface === 'ask' || surface === 'ddx') && askChips) {
+          // /ask + /ddx: HYBRID — stage milestones act as a FLOOR (bar never goes
+          // backward, never overshoots), but within a band we time-interpolate using
+          // the actual median weight for the next stage from /api/ask/stage-medians.
+          // Stages flex based on chips so no reserved space for stages that won't fire.
+          const askStages = surface === 'ddx'
+            ? computeDdxStages(medians, askChips)
+            : computeAskStages(medians, askChips);
           const ms = askMilestoneFor(events, askStages);
           const inBandMs = Math.max(0, now - ms.sinceMs);
           const bandProgress = Math.min(0.9, inBandMs / Math.max(2_000, ms.nextWeightMs));
