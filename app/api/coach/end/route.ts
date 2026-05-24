@@ -3,7 +3,7 @@ import { sql } from '@/lib/cdmss/db';
 import { retrieve } from '@/lib/cdmss/retrieve';
 import { searchPlos } from '@/lib/cdmss/plos';
 import { COACH_MODEL, loadSession, computeAccuracy } from '@/lib/cdmss/coach';
-import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
+import { startTrace, finishTrace, tracedChat, logEvent, setTraceQuestionPreview, setTraceSeverity, setTraceModelSummary, setTraceFinalAnswer } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -59,6 +59,24 @@ export async function POST(req: NextRequest) {
 
   const useSelfCritique = body.selfCritique !== false;  // default true
   const traceId = await startTrace('coach_end', { session_id: id, topic: sess.topic, difficulty: sess.difficulty, accuracy, selfCritique: useSelfCritique });
+
+  // v1.7b S3: forensic capture
+  await Promise.all([
+    logEvent(traceId, 'request_received', null, { body, ua: req.headers.get('user-agent') || '', t: new Date().toISOString() }),
+    setTraceQuestionPreview(traceId, `End summary: ${sess.topic.slice(0, 140)}`),
+    setTraceModelSummary(traceId, { draft: COACH_MODEL, critique: COACH_MODEL, revise: COACH_MODEL }),
+    logEvent(traceId, 'retrieval_hydrated', 'retrieving', {
+      hits: recapHits.map((h) => ({
+        id: h.id, book: h.book, chapter: h.chapter, similarity: h.similarity, text: h.text,
+      })),
+    }),
+    logEvent(traceId, 'plos_search', 'retrieving', {
+      query: sess.topic.slice(0, 200),
+      hit_count: recapPlos.length,
+      hits: recapPlos.map((p) => ({ doi: p.doi, title: p.title, year: p.year, authors: p.authors, url: p.url, abstract: p.abstract })),
+    }),
+  ]);
+
   let raw = '';
   let critiqueJson: { ungrounded_concepts?: string[]; missed_gaps?: string[]; suggested_next_problems?: string[]; summary_inaccurate?: string[]; needs_revision?: boolean } | null = null;
   try {
@@ -92,6 +110,21 @@ export async function POST(req: NextRequest) {
         if (a >= 0 && b > a) critRaw = critRaw.slice(a, b + 1);
         critiqueJson = JSON.parse(critRaw);
 
+        const issueCount0 = (critiqueJson?.ungrounded_concepts?.length || 0)
+          + (critiqueJson?.missed_gaps?.length || 0)
+          + (critiqueJson?.suggested_next_problems?.length || 0)
+          + (critiqueJson?.summary_inaccurate?.length || 0);
+        const severity0 = issueCount0 === 0 ? 'none' : issueCount0 <= 2 ? 'minor' : issueCount0 <= 4 ? 'moderate' : 'major';
+        await Promise.all([
+          logEvent(traceId, 'critique_parsed', 'reviewing', {
+            issue_count: issueCount0,
+            severity: severity0,
+            needs_revision: critiqueJson?.needs_revision,
+            critique: critiqueJson,
+          }),
+          setTraceSeverity(traceId, severity0),
+        ]);
+
         const issueCount = (critiqueJson?.ungrounded_concepts?.length || 0)
           + (critiqueJson?.missed_gaps?.length || 0)
           + (critiqueJson?.suggested_next_problems?.length || 0)
@@ -116,6 +149,22 @@ export async function POST(req: NextRequest) {
     const a = t.indexOf('{'); const b = t.lastIndexOf('}');
     if (a >= 0 && b > a) t = t.slice(a, b + 1);
     const parsed = JSON.parse(t) as { summary?: string; concepts_mastered?: string[]; gaps?: string[]; suggested_next?: string };
+
+    // v1.7b S3: emit final_answer + denormalize summary into traces.final_answer_text
+    const finalAnswerText = [
+      parsed.summary || '',
+      ...(parsed.concepts_mastered || []).map((c) => 'Mastered: ' + c),
+      ...(parsed.gaps || []).map((g) => 'Gap: ' + g),
+      parsed.suggested_next ? 'Next: ' + parsed.suggested_next : '',
+    ].filter(Boolean).join(' | ');
+    await Promise.all([
+      logEvent(traceId, 'final_answer', 'done', {
+        answer_text: finalAnswerText,
+        parsed_full: parsed,
+        char_count: finalAnswerText.length,
+      }),
+      setTraceFinalAnswer(traceId, finalAnswerText),
+    ]);
 
     if (!sess.ended_at) {
       await (sql as unknown as (q: string, p: unknown[]) => Promise<unknown>)(

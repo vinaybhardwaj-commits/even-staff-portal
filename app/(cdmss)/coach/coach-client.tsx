@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Brain, Check, AlertCircle, X, MessageCircleQuestion, RotateCcw, BookOpen, Sparkles, FileText, Eye, Lightbulb } from 'lucide-react';
+import { MarkdownAnswer } from '@/components/cdmss/MarkdownAnswer';
+import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
 
 type Correctness = 'correct' | 'partial' | 'incorrect' | 'clarifying';
 type Turn = {
@@ -32,7 +34,7 @@ const DIFFICULTY_COLOR: Record<Difficulty, string> = {
   advanced: 'bg-rose-100 text-rose-900',
 };
 
-const TOPIC_CHIPS = [
+const DEFAULT_TOPIC_CHIPS = [
   'Atrial fibrillation management',
   'Workup of hyponatremia',
   'Acute pancreatitis severity',
@@ -76,11 +78,26 @@ export default function CoachClient() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [difficultyFlash, setDifficultyFlash] = useState(false);
+  // v1.7b S3: per-turn traceId + end-summary traceId + chip rotation surface=coach
+  const [lastTraceId, setLastTraceId] = useState<string | null>(null);
+  const [trace, setTrace] = useState<TraceEvent[]>([]);
+  const [totalMs, setTotalMs] = useState<number | undefined>(undefined);
+  const [chips, setChips] = useState<string[]>(DEFAULT_TOPIC_CHIPS);
+  const loadChips = useCallback(async () => {
+    try {
+      const r = await fetch('/api/ask/example-questions?surface=coach&n=5');
+      if (!r.ok) return;
+      const j = await r.json();
+      const qs = (j.questions || []).map((x: { question: string }) => x.question).filter(Boolean);
+      if (qs.length) setChips(qs);
+    } catch {}
+  }, []);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
   }, [turns]);
+  useEffect(() => { loadChips(); }, [loadChips]);
 
   async function startSession(e?: React.FormEvent) {
     e?.preventDefault();
@@ -97,6 +114,7 @@ export default function CoachClient() {
           difficulty: initialDifficulty,
         }),
       });
+      const tid0 = r.headers.get('X-Trace-Id'); if (tid0) setLastTraceId(tid0);
       if (!r.ok) { setError(`${r.status}: ${(await r.text()).slice(0, 200)}`); return; }
       const d = await r.json();
       setSessionId(d.session_id);
@@ -135,6 +153,7 @@ export default function CoachClient() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, user_message: msg, force_answer: forceAnswer }),
       });
+      const tid1 = r.headers.get('X-Trace-Id'); if (tid1) setLastTraceId(tid1);
       if (!r.ok) { setError(`${r.status}: ${(await r.text()).slice(0, 200)}`); setLoading(false); return; }
       const d = await r.json();
       // Replace optimistic user turn with the server's, append coach turn(s).
@@ -165,6 +184,7 @@ export default function CoachClient() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId }),
       });
+      const tid2 = r.headers.get('X-Trace-Id'); if (tid2) setLastTraceId(tid2);
       if (!r.ok) { setError(`${r.status}: ${(await r.text()).slice(0, 200)}`); return; }
       const d = await r.json();
       setSummary({
@@ -214,13 +234,20 @@ export default function CoachClient() {
                 placeholder="Atrial fibrillation management"
                 className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {TOPIC_CHIPS.map((t) => (
-                  <button type="button" key={t} onClick={() => setTopic(t)}
-                    className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-600 hover:border-brand hover:text-brand">
-                    {t}
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {chips.map((t, i) => (
+                  <button type="button" key={`${i}-${t.slice(0, 20)}`} onClick={() => setTopic(t)}
+                    className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-600 hover:border-brand hover:text-brand"
+                    title={t}>
+                    {t.length > 54 ? t.slice(0, 51) + '…' : t}
                   </button>
                 ))}
+                <button type="button" onClick={loadChips}
+                  aria-label="Shuffle topic chips"
+                  className="rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-500 hover:border-brand hover:text-brand"
+                  title="Show different topics">
+                  ↻
+                </button>
               </div>
             </div>
           ) : (
@@ -275,13 +302,17 @@ export default function CoachClient() {
           <h2 className="flex items-center gap-2 text-base font-semibold text-emerald-900">
             <BookOpen className="h-5 w-5" /> Session summary
           </h2>
-          <p className="mt-2 text-sm text-emerald-800">{summary.summary}</p>
+          <div className="mt-2 text-sm text-emerald-800"><MarkdownAnswer text={summary.summary} onCite={() => {}} /></div>
           <div className="mt-3 flex items-center gap-3 text-xs text-emerald-700">
             <span>Topic: <span className="font-medium">{currentTopic}</span></span>
             <span>·</span>
             <span>Difficulty: <span className="font-medium capitalize">{difficulty}</span></span>
             <span>·</span>
             <span>Accuracy: <span className="font-medium">{(summary.accuracy * 100).toFixed(0)}%</span></span>
+            {lastTraceId && (<>
+              <span>·</span>
+              <a href={`/ask/trace/${lastTraceId}`} target="_blank" rel="noopener noreferrer" className="font-medium text-brand hover:underline">View trace ↗</a>
+            </>)}
           </div>
         </div>
 
