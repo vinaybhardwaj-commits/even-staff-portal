@@ -94,16 +94,22 @@ export default function TracePanel({ events, totalMs, traceId }: { events: Trace
       </button>
       {open && !isComplete && !hasError && (() => {
         const elapsed = now - t0;
-        const eta = Math.max(0, medians.total_p50 - elapsed);
-        const overdue = elapsed > medians.total_p90;
-        const pct = Math.min(95, Math.max(2, (elapsed / medians.total_p50) * 100));
+        // v2.0.1: when elapsed exceeds the expected p50, re-scale the denominator
+        // so the bar never pins at 100% before the 'done' event arrives. The medians
+        // come from /api/ask/stage-medians which is calibrated for /ask (~30s typical),
+        // so on slower surfaces like /drugs (~5min typical) the bar would otherwise
+        // hit 100% in the first 30s and stay there for the rest of the query.
+        const overdue = elapsed > medians.total_p50;
+        const effectiveTotal = overdue ? Math.max(medians.total_p50, elapsed * 1.15) : medians.total_p50;
+        const eta = Math.max(0, effectiveTotal - elapsed);
+        const pct = Math.min(95, Math.max(2, (elapsed / effectiveTotal) * 100));
         const explainer = STAGE_EXPLAINERS[last.stage];
         return (
           <div className="border-t border-slate-200 bg-white/40 px-3 py-2">
             <div className="mb-1 flex items-center justify-between text-[10.5px] text-slate-500">
               <span>{formatDuration(elapsed)} elapsed</span>
               {overdue
-                ? <span className="text-amber-700">Longer than usual — Mac Mini may be busy</span>
+                ? <span className="text-amber-700">Longer than usual — still working</span>
                 : <span>~{formatDuration(eta)} remaining</span>}
             </div>
             <div className="h-1.5 w-full overflow-hidden rounded bg-slate-200">

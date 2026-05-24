@@ -174,6 +174,9 @@ function LookupPanel() {
   }
   const [data, setData] = useState<LookupResp | null>(null);
   const [pubchemFacts, setPubchemFacts] = useState<PubChemFacts | null>(null);
+  // v2.0.1: self-critique toggle (default ON) + critique result banner
+  const [selfCritique, setSelfCritique] = useState(true);
+  const [critique, setCritique] = useState<{ severity: string; issue_count: number; details: Record<string, unknown> } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [highlighted, setHighlighted] = useState<number | null>(null);
@@ -183,6 +186,20 @@ function LookupPanel() {
   const [traceId, setTraceId] = useState<string | null>(null);
   function pushTrace(stage: string, msg: string, ms?: number, done = false, error = false) {
     setTrace((prev) => {
+      // v2.0.1: collapse repeating heartbeat messages "<phase> ... (Ns on this phase)"
+      // into a single ticking line per phase. The underlying View trace ↗ keeps every
+      // heartbeat for forensic audit (server-side logEvent unchanged).
+      const HB_RE = /^(.+?) \(\d+s on this phase\)\s*$/;
+      const hbMatch = msg.match(HB_RE);
+      if (hbMatch && prev.length > 0) {
+        const key = hbMatch[1].trim();
+        const last = prev[prev.length - 1];
+        const lastHb = last.msg.match(HB_RE);
+        if (lastHb && lastHb[1].trim() === key) {
+          // Same heartbeat key — REPLACE last event in-place instead of appending.
+          return [...prev.slice(0, -1), { stage, msg, ms, done, error, ts: Date.now() }];
+        }
+      }
       const next = prev.map((p, i) => (i === prev.length - 1 && !p.done) ? { ...p, done: true } : p);
       return [...next, { stage, msg, ms, done, error, ts: Date.now() }];
     });
@@ -193,7 +210,7 @@ function LookupPanel() {
     e?.preventDefault();
     const q = drug.trim();
     if (!q) return;
-    setError(null); setData(null); setPubchemFacts(null); setLoading(true); setOpenIds({});
+    setError(null); setData(null); setPubchemFacts(null); setCritique(null); setLoading(true); setOpenIds({});
     setTrace([]); setTotalMs(undefined); setTraceId(null);
     const t0 = Date.now();
     try {
@@ -205,7 +222,7 @@ function LookupPanel() {
       } catch {}
       const r = await fetch('/api/drugs/lookup', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ drug: q, renal_ctx: renalCtx }),
+        body: JSON.stringify({ drug: q, renal_ctx: renalCtx, selfCritique }),
       });
       const tid = r.headers.get('x-trace-id'); if (tid) setTraceId(tid);
       if (!r.ok) { setError(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`); return; }
@@ -277,7 +294,7 @@ function LookupPanel() {
         </button>
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-xs text-slate-400">Try:</span>
         {['metformin', 'warfarin', 'amiodarone', 'lisinopril', 'levetiracetam'].map((d) => (
           <button key={d} onClick={() => { setDrug(d); }} disabled={loading}
@@ -285,10 +302,50 @@ function LookupPanel() {
             {d}
           </button>
         ))}
+        {/* v2.0.1: Self-critique killswitch chip (default ON) */}
+        <button
+          type="button"
+          onClick={() => setSelfCritique(!selfCritique)}
+          disabled={loading}
+          aria-pressed={selfCritique}
+          title={selfCritique ? 'Audit pass on the pharmacology phase is enabled — adds ~2-3 min for higher accuracy' : 'Audit pass disabled — faster but no second-opinion check'}
+          className={`ml-auto rounded-full border px-3 py-1 text-xs font-medium transition disabled:opacity-40 ${
+            selfCritique
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              : 'border-slate-300 bg-white text-slate-500 hover:border-slate-400'
+          }`}
+        >
+          {selfCritique ? '✓ Self-critique' : 'Self-critique off'}
+        </button>
       </div>
 
       {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
+
+      {/* v2.0.1: critique banner — shows when the pharmacology audit pass flagged + fixed issues */}
+      {critique && (critique.issue_count > 0 || critique.severity !== 'none') && (
+        <div className={`mt-4 rounded-lg border p-3 text-sm ${
+          critique.severity === 'major' ? 'border-rose-300 bg-rose-50 text-rose-900'
+            : critique.severity === 'moderate' ? 'border-amber-300 bg-amber-50 text-amber-900'
+            : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+        }`}>
+          <div className="font-medium">
+            ✓ Audit pass found {critique.issue_count} issue{critique.issue_count !== 1 ? 's' : ''} in the draft pharmacology JSON — revision applied
+            <span className="ml-2 rounded bg-white/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wider">{critique.severity}</span>
+          </div>
+          {critique.details && (
+            <ul className="mt-1.5 space-y-0.5 text-xs">
+              {(['missing_critical_info', 'missing_safety_signals', 'incorrect_dosing', 'unsupported_claims', 'citation_problems'] as const).map((k) => {
+                const arr = (critique.details as Record<string, string[]>)[k];
+                if (!Array.isArray(arr) || arr.length === 0) return null;
+                return (
+                  <li key={k}><span className="font-semibold">{k.replace(/_/g, ' ')}:</span> {arr.length} item{arr.length !== 1 ? 's' : ''}</li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
 
       {loading && !data && (
         <div className="mt-6 rounded-xl border bg-white p-8 text-center text-slate-400 shadow-sm">
@@ -503,6 +560,20 @@ function InteractionsPanel() {
   const [traceId, setTraceId] = useState<string | null>(null);
   function pushTrace(stage: string, msg: string, ms?: number, done = false, error = false) {
     setTrace((prev) => {
+      // v2.0.1: collapse repeating heartbeat messages "<phase> ... (Ns on this phase)"
+      // into a single ticking line per phase. The underlying View trace ↗ keeps every
+      // heartbeat for forensic audit (server-side logEvent unchanged).
+      const HB_RE = /^(.+?) \(\d+s on this phase\)\s*$/;
+      const hbMatch = msg.match(HB_RE);
+      if (hbMatch && prev.length > 0) {
+        const key = hbMatch[1].trim();
+        const last = prev[prev.length - 1];
+        const lastHb = last.msg.match(HB_RE);
+        if (lastHb && lastHb[1].trim() === key) {
+          // Same heartbeat key — REPLACE last event in-place instead of appending.
+          return [...prev.slice(0, -1), { stage, msg, ms, done, error, ts: Date.now() }];
+        }
+      }
       const next = prev.map((p, i) => (i === prev.length - 1 && !p.done) ? { ...p, done: true } : p);
       return [...next, { stage, msg, ms, done, error, ts: Date.now() }];
     });

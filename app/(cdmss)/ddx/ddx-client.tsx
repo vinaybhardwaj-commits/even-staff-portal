@@ -179,6 +179,20 @@ export default function DdxClient() {
 
   function pushTrace(stage: string, msg: string, ms?: number, done = false, error = false) {
     setTrace((prev) => {
+      // v2.0.1: collapse repeating heartbeat messages "<phase> ... (Ns on this phase)"
+      // into a single ticking line per phase. The underlying View trace ↗ keeps every
+      // heartbeat for forensic audit (server-side logEvent unchanged).
+      const HB_RE = /^(.+?) \(\d+s on this phase\)\s*$/;
+      const hbMatch = msg.match(HB_RE);
+      if (hbMatch && prev.length > 0) {
+        const key = hbMatch[1].trim();
+        const last = prev[prev.length - 1];
+        const lastHb = last.msg.match(HB_RE);
+        if (lastHb && lastHb[1].trim() === key) {
+          // Same heartbeat key — REPLACE last event in-place instead of appending.
+          return [...prev.slice(0, -1), { stage, msg, ms, done, error, ts: Date.now() }];
+        }
+      }
       const next = prev.map((p, i) => (i === prev.length - 1 && !p.done) ? { ...p, done: true } : p);
       return [...next, { stage, msg, ms, done, error, ts: Date.now() }];
     });
