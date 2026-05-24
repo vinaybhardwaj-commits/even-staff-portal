@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle2, Loader2, ChevronDown, ChevronUp, AlertTriangle, Copy, Check } from 'lucide-react';
+import { CheckCircle2, Loader2, ChevronDown, ChevronUp, AlertTriangle, Copy, Check, ExternalLink } from 'lucide-react';
 
 export type TraceEvent = {
   stage: string;
@@ -64,20 +64,31 @@ export default function TracePanel({ events, totalMs, traceId }: { events: Trace
       </button>
       {open && stalled && (
         <div className="border-t border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
-          ⚠ No progress for {Math.round((now - last.ts) / 1000)}s. Mac Mini Ollama may be queuing behind ingest work — this can take up to 90s. If it crosses 120s the Vercel function will time out.
+          ⚠ No progress for {Math.round((now - last.ts) / 1000)}s. Mac Mini Ollama may be queuing — this can take up to 90s per stage. The Vercel function will time out at 300s total.
         </div>
       )}
       {open && traceId && (
         <div className="flex items-center gap-2 border-t border-slate-200 bg-white/60 px-3 py-1.5 text-[11px] text-slate-500">
           <span className="font-mono uppercase tracking-wide text-slate-400">trace</span>
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] text-slate-700">{traceId}</code>
+          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10.5px] text-slate-700">{traceId.slice(0, 8)}…</code>
+          <a
+            href={`/ask/trace/${traceId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center gap-1 rounded border border-brand bg-brand-faint px-2 py-0.5 text-[10.5px] font-medium text-brand hover:bg-brand hover:text-white"
+            aria-label="View full trace"
+            title="Open the full forensic trace for this query in a new tab"
+          >
+            View trace
+            <ExternalLink className="h-3 w-3" />
+          </a>
           <button
             onClick={copyTraceId}
-            className="ml-auto inline-flex items-center gap-1 rounded border border-slate-200 px-1.5 py-0.5 text-[10.5px] text-slate-600 hover:border-brand hover:text-brand"
+            className="inline-flex items-center gap-1 rounded border border-slate-200 px-1.5 py-0.5 text-[10.5px] text-slate-500 hover:border-brand hover:text-brand"
             aria-label="Copy trace ID"
+            title="Copy full trace ID"
           >
             {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-            {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
       )}

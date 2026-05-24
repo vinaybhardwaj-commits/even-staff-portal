@@ -59,6 +59,7 @@ export default function AskClient() {
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [totalMs, setTotalMs] = useState<number | undefined>(undefined);
+  const [traceId, setTraceId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const recRef = useRef<SR | null>(null);
   const sessionId = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), []);
@@ -102,7 +103,7 @@ export default function AskClient() {
   }
 
   async function submit(q: string) {
-    setQuestion(q); setAnswer(''); setCitations([]); setPlosCitations([]); setCritique(null); setError(null); setExpanded({}); setHighlighted(null);
+    setQuestion(q); setAnswer(''); setCitations([]); setPlosCitations([]); setCritique(null); setError(null); setExpanded({}); setHighlighted(null); setTraceId(null);
     setTrace([]); setTotalMs(undefined); setLoading(true);
     abortRef.current?.abort();
     const ctrl = new AbortController(); abortRef.current = ctrl;
@@ -110,6 +111,8 @@ export default function AskClient() {
     let fullAnswer = ''; let citationsLocal: Citation[] = [];
     try {
       const r = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: q, includePlos, multiQuery, selfCritique, useReranker, useSourceWeights }), signal: ctrl.signal });
+      // v1.7 Sprint D: capture trace ID so the View trace ↗ link can deep-link to it
+      const tid = r.headers.get('X-Trace-Id'); if (tid) setTraceId(tid);
       if (!r.ok) { setError(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`); setLoading(false); return; }
       await consumeNdjson(r, (ev) => {
         if (ev.type === 'progress') pushTrace(ev.stage, ev.msg, ev.ms);
@@ -224,7 +227,7 @@ export default function AskClient() {
         </button>
       </div>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} /></div>}
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
 
       {error && <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>}
 
