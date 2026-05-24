@@ -6,11 +6,12 @@ import { Info, X, ChevronDown, ChevronUp } from 'lucide-react';
 type Props = {
   storageKey: string;
   title: string;
+  body?: string;
   bullets: string[];
   defaultOpen?: boolean;
 };
 
-export default function HelpCard({ storageKey, title, bullets, defaultOpen = true }: Props) {
+export default function HelpCard({ storageKey, title, body, bullets, defaultOpen = true }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const [dismissed, setDismissed] = useState(false);
   const [hydrated, setHydrated] = useState(false);
