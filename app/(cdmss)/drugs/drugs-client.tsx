@@ -220,7 +220,7 @@ function LookupPanel() {
           dRef.current = { ...(dRef.current || {} as LookupResp), ...(ev.data as Partial<LookupResp>) } as LookupResp;
           setData(dRef.current);
         }
-        else if (ev.type === 'pubchem_facts') { setPubchemFacts((ev as unknown as { data: PubChemFacts }).data); }
+        else if ((ev as { type: string }).type === 'pubchem_facts') { setPubchemFacts((ev as unknown as { data: PubChemFacts }).data); }
         else if (ev.type === 'done') { setTotalMs(ev.ms); pushTrace('done', '', ev.ms, true); }
         else if (ev.type === 'error') { setError(ev.message); pushTrace('done', ev.message, undefined, true, true); }
       });
