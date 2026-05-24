@@ -8,6 +8,8 @@
  * If validation fails, we fall back to a JSON code-block view rather than
  * crash — fails closed.
  */
+'use client';
+import { useEffect, useState } from 'react';
 import { z } from 'zod';
 
 export const DosingCardSchema = z.object({
@@ -33,7 +35,29 @@ export const DosingCardSchema = z.object({
 
 export type DosingCardData = z.infer<typeof DosingCardSchema>;
 
+type PubChemMini = {
+  cid: number;
+  canonical_name: string | null;
+  atc_codes: string[];
+  url: string;
+  mesh_top: string | null;
+};
+
 export function DosingCard({ data, onCite }: { data: DosingCardData; onCite?: (n: string) => void }) {
+  // v1.9b: fetch PubChem facts for the drug on mount — non-blocking, soft-fail
+  const [pubchem, setPubchem] = useState<PubChemMini | null>(null);
+  useEffect(() => {
+    if (!data.drug) return;
+    const ctrl = new AbortController();
+    fetch(`/api/pubchem/lookup?name=${encodeURIComponent(data.drug)}`, { signal: ctrl.signal })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j) => {
+        if (j && j.found) setPubchem({ cid: j.cid, canonical_name: j.canonical_name, atc_codes: j.atc_codes || [], url: j.url, mesh_top: j.mesh_top });
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [data.drug]);
+
   return (
     <figure className="my-4 rounded-xl border border-rose-200 bg-rose-50/30 p-4 not-prose">
       <header className="mb-3 flex items-baseline justify-between border-b border-rose-200 pb-2">
@@ -122,14 +146,21 @@ export function DosingCard({ data, onCite }: { data: DosingCardData; onCite?: (n
         </div>
       )}
 
-      {data.citation_ids && data.citation_ids.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1 border-t border-rose-100 pt-2">
-          {data.citation_ids.map((c, i) => (
+      {((data.citation_ids && data.citation_ids.length > 0) || pubchem) && (
+        <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-rose-100 pt-2">
+          {data.citation_ids && data.citation_ids.map((c, i) => (
             <button key={i} onClick={() => onCite?.(String(c))}
                     className="rounded bg-brand-faint px-1.5 py-0.5 text-[10px] font-medium text-brand hover:bg-brand hover:text-white">
               [{c}]
             </button>
           ))}
+          {pubchem && (
+            <a href={pubchem.url} target="_blank" rel="noopener noreferrer"
+               className="ml-auto inline-flex items-center gap-1 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 hover:bg-sky-200"
+               title={`PubChem CID ${pubchem.cid}${pubchem.atc_codes.length ? ` · ATC ${pubchem.atc_codes.join(', ')}` : ''}${pubchem.mesh_top ? ` · ${pubchem.mesh_top}` : ''}`}>
+              PubChem ↗ CID {pubchem.cid}{pubchem.atc_codes[0] ? ` · ${pubchem.atc_codes[0]}` : ''}
+            </a>
+          )}
         </div>
       )}
     </figure>

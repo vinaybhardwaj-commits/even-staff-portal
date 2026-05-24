@@ -27,7 +27,7 @@ async function cachedFetch(url: string): Promise<unknown | null> {
       signal: AbortSignal.timeout(5000),
     });
     if (!r.ok) {
-      CACHE.set(url, { value: null, expires: Date.now() + 60_000 }); // negative cache 1min
+      CACHE.set(url, { value: null, expires: Date.now() + TTL_MS }); // v1.9b: negative cache 24h (was 60s) — stops typo-spam against PubChem
       return null;
     }
     const data = await r.json();
@@ -38,7 +38,7 @@ async function cachedFetch(url: string): Promise<unknown | null> {
     }
     return data;
   } catch {
-    CACHE.set(url, { value: null, expires: Date.now() + 60_000 });
+    CACHE.set(url, { value: null, expires: Date.now() + TTL_MS });
     return null;
   }
 }
@@ -160,12 +160,21 @@ export async function enrichDrug(name: string): Promise<PubChemFacts> {
     getATCCodes(cid),
     getDrugIndication(cid),
   ]);
+  // v1.9b: merge multi-mechanism secondary ATCs (PubChem returns only primary).
+  // Lookup by both the input name AND the canonical name from synonyms so brand-name
+  // inputs like 'Eliquis' also pick up apixaban's secondary codes.
+  const secondaryAtc = Array.from(new Set([
+    ...getSecondaryAtcCodes(name),
+    ...getSecondaryAtcCodes(synonyms[0] || ''),
+  ]));
+  const mergedAtc = Array.from(new Set([...atc, ...secondaryAtc]));
+
   return {
     cid,
     canonical_name: synonyms[0] || name,
     synonyms,
     mesh_pharmacological_actions: mesh,
-    atc_codes: atc,
+    atc_codes: mergedAtc,
     indication,
     url: `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`,
     fetched_at: new Date().toISOString(),
@@ -216,6 +225,89 @@ const ATC3_LABEL: Record<string, string> = {
 /** Label an ATC3 prefix using the friendly map; falls back to "ATC class X". */
 export function atc3Label(prefix: string): string {
   return ATC3_LABEL[prefix] || `ATC class ${prefix}`;
+}
+
+/**
+ * v1.9b: Multi-mechanism ATC fallback.
+ *
+ * PubChem returns ONE primary ATC code per CID. Some drugs are clinically used
+ * across multiple mechanisms (e.g. aspirin = analgesic AND antiplatelet) but
+ * PubChem only exposes the primary code. This map adds the secondary clinical
+ * ATC codes so findClassOverlap catches cross-mechanism overlaps.
+ *
+ * Keyed by canonical lowercase drug name. Merged with PubChem's primary in enrichDrug.
+ *
+ * Source: WHOCC ATC/DDD index 2025. Expand as the team discovers gaps.
+ */
+const MULTI_MECHANISM_ATC: Record<string, string[]> = {
+  // Antiplatelet/analgesic dual
+  'aspirin':              ['B01AC06', 'N02BA01'],   // antiplatelet + analgesic — PubChem returns only N02BA01
+  'acetylsalicylic acid': ['B01AC06', 'N02BA01'],
+
+  // Beta-blockers with secondary mechanisms
+  'propranolol':          ['C07AA05', 'N07XX'],     // beta-blocker + migraine prophylaxis
+  'carvedilol':           ['C07AG02'],              // beta + alpha-blocker — already C07
+  'labetalol':            ['C07AG01'],              // alpha-beta blocker
+
+  // Antidepressants used for chronic pain
+  'amitriptyline':        ['N06AA09', 'N03AX'],     // TCA antidepressant + neuropathic pain
+  'duloxetine':           ['N06AX21', 'N03AX'],     // SNRI + neuropathic pain
+  'gabapentin':           ['N03AX12'],              // antiepileptic + neuropathic pain — single ATC OK
+  'pregabalin':           ['N03AX16'],
+
+  // Anti-inflammatories with cardiac risk
+  'colchicine':           ['M04AC01', 'C01EB16'],   // gout + pericarditis/CV inflammation
+
+  // Antiarrhythmics with multiple mechanisms
+  'amiodarone':           ['C01BD01'],              // Class III antiarrhythmic — PubChem gets this right
+  'sotalol':              ['C07AA07', 'C01BD'],     // beta-blocker AND Class III antiarrhythmic — PubChem usually only C07
+  'verapamil':            ['C08DA01', 'C07F'],      // non-DHP CCB + rate control
+
+  // Anticholinergics + antiemetics
+  'metoclopramide':       ['A03FA01', 'N05AX'],     // prokinetic + dopamine antagonist
+  'promethazine':         ['R06AD02', 'N05AA10'],   // antihistamine + antiemetic + sedation
+
+  // PPI + H2 — usually fine in PubChem but worth being defensive
+  'omeprazole':           ['A02BC01'],
+  'pantoprazole':         ['A02BC02'],
+  'ranitidine':           ['A02BA02'],
+
+  // Opioids — many have multi-mechanism pain pathways
+  'tramadol':             ['N02AX02'],              // opioid + SNRI — class N02A captures DDI with antidepressants too
+  'methadone':            ['N07BC02', 'N02AC52'],   // addiction + analgesic
+
+  // Hormones / contraceptives — multi-use
+  'spironolactone':       ['C03DA01'],              // diuretic AND aldosterone antagonist (heart failure)
+  'eplerenone':           ['C03DA04'],
+
+  // Antibiotics with secondary uses
+  'doxycycline':          ['J01AA02', 'A01AB22'],   // tetracycline antibiotic + periodontal
+  'erythromycin':         ['J01FA01', 'A03FA0'],    // macrolide antibiotic + prokinetic
+
+  // Statins — usually fine
+  'atorvastatin':         ['C10AA05'],
+  'simvastatin':          ['C10AA01'],
+  'rosuvastatin':         ['C10AA07'],
+
+  // Antihypertensives + secondary indications
+  'losartan':             ['C09CA01'],
+  'lisinopril':           ['C09AA03'],
+  'enalapril':            ['C09AA02'],
+
+  // Anticonvulsants + mood stabilizer
+  'valproic acid':        ['N03AG01', 'N05AN'],     // antiepileptic + bipolar
+  'lamotrigine':          ['N03AX09', 'N05AN'],
+
+  // Common India-specific brand normalisations (PubChem usually catches via synonyms but seed for class-overlap)
+  'paracetamol':          ['N02BE01'],
+  'acetaminophen':        ['N02BE01'],
+  'ibuprofen':            ['M01AE01'],
+  'diclofenac':           ['M01AB05'],
+};
+
+/** Look up secondary ATC codes for a drug name (case-insensitive). Returns [] if none known. */
+export function getSecondaryAtcCodes(name: string): string[] {
+  return MULTI_MECHANISM_ATC[name.toLowerCase().trim()] || [];
 }
 
 /**
