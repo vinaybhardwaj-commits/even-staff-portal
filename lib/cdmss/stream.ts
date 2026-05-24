@@ -30,11 +30,20 @@ export function makeNdjsonStream() {
   });
   function emit(ev: ProgressEvent) {
     if (!controllerRef) return;
-    controllerRef.enqueue(encoder.encode(JSON.stringify(ev) + '\n'));
+    try {
+      controllerRef.enqueue(encoder.encode(JSON.stringify(ev) + '\n'));
+    } catch {
+      // v2.0.1 H1: enqueue throws TypeError when the stream is already closed
+      // (e.g. a setInterval heartbeat callback fires AFTER close() was called,
+      // or the client aborted the request mid-flight). Marking the controller
+      // null prevents subsequent emits from retrying the same throw. logEvent
+      // server-side trace is unaffected.
+      controllerRef = null;
+    }
   }
   function close() {
     if (!controllerRef) return;
-    controllerRef.close();
+    try { controllerRef.close(); } catch { /* already closed — harmless */ }
     controllerRef = null;
   }
   return { stream, emit, close };
