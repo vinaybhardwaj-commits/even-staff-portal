@@ -1,7 +1,23 @@
 // CALC.1 — calculator type contracts. Implementation lives in components/calculators/.
 // Per PRD §5.1 + §14, every calculator uses the same shell with per-calc config.
 
-export type CalculatorName = 'egfr' | 'news2' | 'abg' | 'hyponatremia' | 'sepsis_bundle';
+export type CalculatorName =
+  | 'egfr'
+  | 'news2'
+  | 'abg'
+  | 'hyponatremia'
+  | 'sepsis_bundle'
+  // v1.8 S1 — ER/ICU deterministic scoring calculators
+  | 'nihss'
+  | 'abcd2'
+  | 'curb65'
+  | 'wells_dvt'
+  | 'wells_pe'
+  | 'heart'
+  | 'timi'
+  | 'sofa'
+  | 'qtc'
+  | 'alvarado';
 
 // One field in a calculator form.
 export type FormFieldType = 'number' | 'integer' | 'enum' | 'bool' | 'text' | 'datetime';
