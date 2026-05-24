@@ -74,6 +74,12 @@ export default function AskClient() {
     } catch {}
   }, []);
   useEffect(() => { loadChips(); }, [loadChips]);
+  // v1.8: read ?q= query param on mount (used by /calculators 'Ask deeper' chips)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search).get('q');
+    if (q && q.trim()) setQuestion(q.trim());
+  }, []);
   const abortRef = useRef<AbortController | null>(null);
   const recRef = useRef<SR | null>(null);
   const sessionId = useMemo(() => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now())), []);
