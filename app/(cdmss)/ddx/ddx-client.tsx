@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
 import { Send, Loader2, AlertTriangle, ChevronDown, ChevronUp, ClipboardList, BookOpen, Microscope } from 'lucide-react';
@@ -157,6 +157,24 @@ export default function DdxClient() {
   const [plosOpenCites, setPlosOpenCites] = useState<Record<string, boolean>>({});
   const [trace, setTrace] = useState<TraceEvent[]>([]);
   const [totalMs, setTotalMs] = useState<number | undefined>(undefined);
+  const [traceId, setTraceId] = useState<string | null>(null);
+  // v1.7b S2: rotating example chips with Shuffle ↻ (surface=ddx)
+  const DEFAULT_CHIPS = [
+    '62y M with sudden-onset RLQ pain, fever, anorexia x 18hr',
+    '45y F with painless rectal bleeding x 3 months, mild anaemia',
+    '72y M with sudden right hemiparesis + aphasia 90 min ago',
+  ];
+  const [chips, setChips] = useState<string[]>(DEFAULT_CHIPS);
+  const loadChips = useCallback(async () => {
+    try {
+      const r = await fetch('/api/ask/example-questions?surface=ddx&n=4');
+      if (!r.ok) return;
+      const j = await r.json();
+      const qs = (j.questions || []).map((x: { question: string }) => x.question).filter(Boolean);
+      if (qs.length) setChips(qs);
+    } catch {}
+  }, []);
+  useEffect(() => { loadChips(); }, [loadChips]);
 
   function pushTrace(stage: string, msg: string, ms?: number, done = false, error = false) {
     setTrace((prev) => {
@@ -176,7 +194,7 @@ export default function DdxClient() {
     e?.preventDefault();
     if (!cc.trim()) { setError('Chief complaint is required'); return; }
     setError(null); setData(null); setLoading(true); setOpenCites({});
-    setTrace([]); setTotalMs(undefined);
+    setTrace([]); setTotalMs(undefined); setTraceId(null);
     const t0 = Date.now();
     try {
       const r = await fetch('/api/ddx', {
@@ -190,6 +208,8 @@ export default function DdxClient() {
           exam: exam.trim() || undefined,
           vitals: vitals.trim() || undefined, multiQuery, selfCritique, includePlos: true }),
       });
+      const tid = r.headers.get('X-Trace-Id');
+      if (tid) setTraceId(tid);
       if (!r.ok) {
         const t = await r.text();
         setError(`HTTP ${r.status}: ${t.slice(0, 200)}`);
@@ -326,11 +346,39 @@ export default function DdxClient() {
         </div>
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <span className="text-xs text-slate-400">Try:</span>
+      {/* v1.7b S2: rotating chips from EHRC case-mix DDx bank + Shuffle */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs text-slate-400">Try a case:</span>
+        {chips.map((stem, i) => (
+          <button
+            key={`${i}-${stem.slice(0, 20)}`}
+            type="button"
+            onClick={() => setCc(stem)}
+            disabled={loading}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand disabled:opacity-40"
+            title={stem}
+          >
+            {stem.length > 56 ? stem.slice(0, 53) + '…' : stem}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={loadChips}
+          disabled={loading}
+          aria-label="Shuffle case examples"
+          className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 hover:border-brand hover:text-brand disabled:opacity-40"
+          title="Show different examples"
+        >
+          ↻
+        </button>
+      </div>
+      {/* Rich form-fill examples kept as a secondary row */}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <span className="text-xs text-slate-400">Or a full preset:</span>
         {EXAMPLES.map((ex, i) => (
           <button
             key={i}
+            type="button"
             onClick={() => loadExample(ex)}
             disabled={loading}
             className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 hover:border-brand hover:text-brand disabled:opacity-40"
@@ -340,7 +388,7 @@ export default function DdxClient() {
         ))}
       </div>
 
-      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} /></div>}
+      {(trace.length > 0 || loading) && <div className="mt-5"><TracePanel events={trace} totalMs={totalMs} traceId={traceId} /></div>}
 
       {error && (
         <div className="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>

@@ -3,7 +3,7 @@ import { retrieve } from '@/lib/cdmss/retrieve';
 import { retrieveMultiQuery } from '@/lib/cdmss/multi-query';
 import { searchPlos, formatPlosForPrompt, type PlosHit } from '@/lib/cdmss/plos';
 import { makeNdjsonStream, ndjsonHeaders } from '@/lib/cdmss/stream';
-import { startTrace, finishTrace, tracedChat } from '@/lib/cdmss/trace';
+import { startTrace, finishTrace, tracedChat, logEvent, setTraceQuestionPreview, setTraceSeverity, setTraceModelSummary, setTraceFinalAnswer } from '@/lib/cdmss/trace';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -86,6 +86,13 @@ export async function POST(req: NextRequest) {
   const t0 = Date.now();
   const traceId = await startTrace('ddx', { cc: body.cc, age: body.age, sex: body.sex, history: body.history, exam: body.exam, vitals: body.vitals });
 
+  // v1.7b S2: capture request + denormalize fast-access fields on traces row.
+  await Promise.all([
+    logEvent(traceId, 'request_received', null, { body, ua: req.headers.get('user-agent') || '', t: new Date().toISOString() }),
+    setTraceQuestionPreview(traceId, display.replace(/\n+/g, ' • ')),
+    setTraceModelSummary(traceId, { draft: DDX_MODEL, critique: DDX_MODEL, revise: DDX_MODEL, embedding: 'mxbai-embed-large' }),
+  ]);
+
   (async () => {
     let outcome: 'success' | 'error' | 'partial' = 'success';
     let outcomeMsg: string | undefined;
@@ -104,6 +111,31 @@ export async function POST(req: NextRequest) {
         includePlos ? searchPlos(plosQuery, { rows: 5, yearsBack: 5 }) : Promise.resolve([] as PlosHit[]),
       ]);
       const hits = retrieveResult.hits;
+
+      // v1.7b S2: forensic capture — full chunk text + scores + PLOS abstracts
+      await Promise.all([
+        logEvent(traceId, 'retrieval_hydrated', 'retrieving', {
+          variants: retrieveResult.variants,
+          per_variant_counts: retrieveResult.perVariantCounts,
+          hits: hits.map((h) => ({
+            id: h.id, book: h.book, chapter: h.chapter,
+            page_start: h.page_start, page_end: h.page_end,
+            chunk_type: h.chunk_type,
+            similarity: h.similarity,
+            // @ts-expect-error v1.6 added these
+            source_quality_weight: h.source_quality_weight,
+            // @ts-expect-error v1.6 added these
+            rerank_score: h.rerank_score,
+            text: h.text,
+          })),
+        }),
+        includePlos ? logEvent(traceId, 'plos_search', 'retrieving', {
+          query: plosQuery.slice(0, 200),
+          hit_count: plosHits.length,
+          hits: plosHits.map((p) => ({ doi: p.doi, title: p.title, year: p.year, authors: p.authors, url: p.url, abstract: p.abstract })),
+        }) : Promise.resolve(),
+      ]);
+
       if (useMultiQuery && retrieveResult.variants.length > 1) {
         emit({ type: 'progress', stage: 'variants', msg: `Generated ${retrieveResult.variants.length - 1} query variants`, ms: Date.now() - t0 });
       }
@@ -130,7 +162,7 @@ export async function POST(req: NextRequest) {
 
       const useSelfCritique = body.selfCritique !== false;  // default true
 
-      emit({ type: 'progress', stage: useSelfCritique ? 'drafting' : 'generating', msg: `${useSelfCritique ? 'Drafting' : 'Reasoning'} with ${DDX_MODEL}…`, ms: Date.now() - t0 });
+      emit({ type: 'progress', stage: useSelfCritique ? 'drafting' : 'generating', msg: `${useSelfCritique ? 'Drafting' : 'Reasoning'} with the reasoning model…`, ms: Date.now() - t0 });
       const draftRes = await tracedChat(traceId, 'ddx_draft', {
         model: DDX_MODEL,
         messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: userMsg }],
@@ -171,7 +203,20 @@ export async function POST(req: NextRequest) {
           + (critiqueJson.missing_evidence?.length || 0)
           + (critiqueJson.investigation_problems?.length || 0)
           + (critiqueJson.citation_problems?.length || 0);
-        emit({ type: 'critique', severity: critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none'), issue_count: issueCount, details: critiqueJson });
+        const severity = critiqueJson.overall_severity || (issueCount > 0 ? 'minor' : 'none');
+
+        // v1.7b S2: forensic capture of critique JSON + denormalize severity
+        await Promise.all([
+          logEvent(traceId, 'critique_parsed', 'reviewing', {
+            issue_count: issueCount,
+            severity,
+            needs_revision: critiqueJson.needs_revision,
+            critique: critiqueJson,
+          }),
+          setTraceSeverity(traceId, severity),
+        ]);
+
+        emit({ type: 'critique', severity, issue_count: issueCount, details: critiqueJson });
 
         if (critiqueJson.needs_revision && issueCount > 0) {
           emit({ type: 'progress', stage: 'revising', msg: `Revising DDx to address ${issueCount} issue${issueCount !== 1 ? 's' : ''}…`, ms: Date.now() - t0 });
@@ -208,6 +253,23 @@ export async function POST(req: NextRequest) {
           presentation: display,
         },
       });
+      // v1.7b S2: emit final_answer event + denormalize parsed DDx into traces.final_answer_text
+      const finalAnswerText = [
+        parsed.summary || '',
+        ...((parsed.cannot_miss || []) as Array<{ diagnosis?: string }>).map((d) => 'Cannot-miss: ' + (d.diagnosis || '')),
+        ...((parsed.most_likely || []) as Array<{ diagnosis?: string }>).map((d) => 'Likely: ' + (d.diagnosis || '')),
+        ...((parsed.other || []) as Array<{ diagnosis?: string }>).map((d) => 'Other: ' + (d.diagnosis || '')),
+      ].filter(Boolean).join(' | ');
+      await Promise.all([
+        logEvent(traceId, 'final_answer', 'done', {
+          answer_text: finalAnswerText,
+          parsed_full: parsed,
+          char_count: finalAnswerText.length,
+          total_ms: Date.now() - t0,
+        }),
+        setTraceFinalAnswer(traceId, finalAnswerText),
+      ]);
+
       emit({ type: 'done', ms: Date.now() - t0 });
     } catch (e) {
       outcome = 'error';
