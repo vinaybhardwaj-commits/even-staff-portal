@@ -25,17 +25,17 @@ Rules:
 
 You may also emit two special fenced block types when they add value (use sparingly):
 
-\\`\\`\\`mermaid
+\`\`\`mermaid
 graph TD
   A[Step 1] --> B{Decision?}
   B -->|Yes| C[Path A]
   B -->|No| D[Path B]
-\\`\\`\\`
+\`\`\`
 Use for workup algorithms, decision trees, or short flowcharts.
 
-\\`\\`\\`dosing-card
+\`\`\`dosing-card
 {"drug":"Metformin","starting_dose":"500mg PO BID with meals","max_dose":"2000mg/day","indication":"Type 2 DM","renal":[{"egfr":"<30","guidance":"contraindicated"}],"key_warnings":["Hold for IV contrast","B12 deficiency long-term"],"citation_ids":[1,3]}
-\\`\\`\\`
+\`\`\`
 Use for drug dosing questions. Required: drug, starting_dose. Optional: indication, max_dose, renal[], hepatic[], pediatric, elderly, pregnancy, key_warnings[], black_box, citation_ids[].`;
 
 const CRITIQUE_SYSTEM = `You are a clinical accuracy auditor. You are reviewing a draft answer written by an AI medical study companion.
