@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Mic, MicOff, Send, ChevronDown, ChevronUp, BookOpen, Loader2 } from 'lucide-react';
 import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
