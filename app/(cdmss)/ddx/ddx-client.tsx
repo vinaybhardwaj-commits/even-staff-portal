@@ -4,6 +4,7 @@ import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { consumeNdjson } from '@/lib/cdmss/ndjson-client';
 import TracePanel, { TraceEvent } from '@/components/cdmss/TracePanel';
 import { Send, Loader2, AlertTriangle, ChevronDown, ChevronUp, ClipboardList, BookOpen, Microscope } from 'lucide-react';
+import { MarkdownAnswer } from '@/components/cdmss/MarkdownAnswer';
 
 type Citation = {
   n: number; id: number; book: string; chapter: string | null;
@@ -83,7 +84,7 @@ function DxCard({ dx, idx, danger, onCite, onPlosCite }: { dx: Dx; idx: number; 
       {open && (
         <div className="space-y-3 border-t border-slate-100 px-4 py-3 text-sm">
           {dx.why_consider && (
-            <p className="leading-relaxed text-slate-700">{dx.why_consider}</p>
+            <div className="leading-relaxed text-slate-700"><MarkdownAnswer text={dx.why_consider} onCite={(n) => { const num = parseInt(String(n), 10); if (!isNaN(num)) onCite(num); }} /></div>
           )}
           {dx.distinguishing_features && dx.distinguishing_features.length > 0 && (
             <div>
