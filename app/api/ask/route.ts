@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
         n: i + 1, id: h.id, book: h.book, chapter: h.chapter,
         page_start: h.page_start, page_end: h.page_end,
         item_number: h.item_number, chunk_type: h.chunk_type,
-        similarity: Number(h.similarity.toFixed(3)),
+        similarity: typeof h.similarity === "number" ? Number(h.similarity.toFixed(3)) : 0,
         preview: h.text.slice(0, 600),
       }));
       const plosSources = plosHits.map((p, i) => ({
