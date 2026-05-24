@@ -19,7 +19,7 @@ Return ONLY this JSON object, lowercase keys exactly as shown:
 - most_likely: 2-3 by probability
 - other: 1-2 less likely
 - citation_ids = 1-based numbers from the MEDICAL EXCERPTS (textbook). Cite every textbook claim.
-- plos_citation_ids = strings like "P1", "P2" from PLOS ONE ABSTRACTS, if any inform the diagnosis. May be empty array [].
+- plos_citation_ids = strings like "P1", "P2" from PLOS ONE ABSTRACTS, if any inform the diagnosis. May be empty array []. CRITICAL: each entry MUST be a JSON string with DOUBLE QUOTES — write ["P1","P2"] not [P1,P2]. Unquoted barewords are invalid JSON and will fail parse.
 - No prose, no markdown fences, lowercase keys.`;
 
 type Body = { age?: number | string; sex?: string; cc?: string; history?: string; exam?: string; vitals?: string; includePlos?: boolean; multiQuery?: boolean; selfCritique?: boolean };
@@ -47,7 +47,7 @@ const DDX_REVISION_SYSTEM = `You are revising your earlier DDx draft based on a 
 You will receive (1) the clinical presentation, (2) source excerpts, (3) the draft JSON, (4) the auditor's critique. Output the REVISED full DDx JSON using the EXACT shape required:
 {"summary":"one line","missing_info":["..."],"cannot_miss":[{"diagnosis":"name","likelihood":"high|moderate|low","why_consider":"<25 words","distinguishing_features":["<12 words each"],"investigations":["<12 words each"],"citation_ids":[1,2],"plos_citation_ids":["P1"]}],"most_likely":[...],"other":[...]}
 
-Apply every fix in the critique: add missing cannot-miss diagnoses, correct likelihood, replace unsupported claims, swap weak investigations, fix citations. No prose, no markdown fences, lowercase keys only.`;
+Apply every fix in the critique: add missing cannot-miss diagnoses, correct likelihood, replace unsupported claims, swap weak investigations, fix citations. No prose, no markdown fences, lowercase keys only. CRITICAL: plos_citation_ids must be quoted strings — write ["P1","P2"] not [P1,P2]. Output MUST be valid JSON.`;
 
 
 function buildPresentation(b: Body): { display: string; queryHint: string } {
@@ -69,6 +69,18 @@ function parseLooseJson(s: string): unknown {
   const a = t.indexOf('{');
   const b = t.lastIndexOf('}');
   if (a >= 0 && b > a) t = t.slice(a, b + 1);
+  // v1.7c hotfix: model sometimes emits ["plos_citation_ids":[P1, P2]] (unquoted barewords)
+  // on the revision pass — JSON.parse rejects that. Coerce to ["P1","P2"] before parse.
+  t = t.replace(/("plos_citation_ids"\s*:\s*\[)([^\]]*)(\])/g, (_match, open, inner, close) => {
+    const items = String(inner).split(',').map((raw: string) => {
+      const tr = raw.trim();
+      if (!tr) return '';
+      if (/^["'].*["']$/.test(tr)) return tr;                  // already quoted
+      return JSON.stringify(tr.replace(/^["']|["']$/g, ''));   // wrap bareword
+    }).filter(Boolean).join(',');
+    return open + items + close;
+  });
+  // Same fix for citation_ids if model wraps numbers in strings instead of bare ints — harmless coverage
   return JSON.parse(t);
 }
 
