@@ -8,7 +8,7 @@ export const TEXT_MODEL = process.env.TEXT_MODEL || 'qwen2.5:14b';
 export const EMBED_MODEL = process.env.EMBED_MODEL || 'nomic-embed-text';
 export const CRITIQUE_MODEL = process.env.CRITIQUE_MODEL || 'qwen2.5:7b';  // faster than 14b for audit/revise pass
 export const EMBED_MODEL_V2 = process.env.EMBED_MODEL_V2 || 'mxbai-embed-large';
-export const USE_EMBEDDING_V2 = process.env.USE_EMBEDDING_V2 === 'true';
+export const USE_EMBEDDING_V2 = false; // HOTFIX 2026-05-26: embedding_v2 column NULL for new ingestions; revert after backfill
 export const TOP_K = parseInt(process.env.TOP_K || '8', 10);
 
 export async function embedQuery(text: string): Promise<number[]> {
