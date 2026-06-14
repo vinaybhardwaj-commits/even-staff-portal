@@ -6,7 +6,6 @@ import { NextRequest, NextResponse } from 'next/server';
 // the (cdmss) route group. SP.8 redirect logic deleted in v1.2 T1.
 
 const ADMIN_PROBE_PATHS = [
-  '/admin',
   '/dashboard',
   '/manage',
   '/cms',
